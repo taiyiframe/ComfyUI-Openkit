@@ -1,4 +1,4 @@
-const { app } = window.comfyAPI.app;
+﻿const { app } = window.comfyAPI.app;
 
 function registerMultiframeRef(nodeType, portMeta) {
     const onNodeCreated = nodeType.prototype.onNodeCreated;
@@ -179,7 +179,7 @@ function registerMultiframeRef(nodeType, portMeta) {
 }
 
 app.registerExtension({
-    name: "ComfyUI-OpenToolkit",
+    name: "ComfyUI-Openkit",
     async beforeRegisterNodeDef(nodeType, nodeData) {
         const buildPortMeta = () => {
             const meta = {};

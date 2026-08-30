@@ -1,4 +1,4 @@
-import re
+﻿import re
 
 
 QUOTE_PAIRS = [
@@ -148,7 +148,7 @@ class SubjectRefTagReplacement:
     RETURN_TYPES = ("STRING", "STRING",)
     RETURN_NAMES = ("分镜序列", "音色索引",)
     FUNCTION = "replace_shot_names"
-    CATEGORY = "OpenToolkit"
+    CATEGORY = "Openkit"
     OUTPUT_NODE = True
 
     @staticmethod

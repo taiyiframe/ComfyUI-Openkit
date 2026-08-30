@@ -1,9 +1,9 @@
-[project]
-name = "ComfyUI-OpenToolkit"
+﻿[project]
+name = "ComfyUI-Openkit"
 version = "0.1.0"
 description = "Personal ComfyUI utility node collection"
 requires-python = ">=3.10"
 dependencies = []
 
 [tool.comfyui]
-display_name = "OpenToolkit"
+display_name = "Openkit"

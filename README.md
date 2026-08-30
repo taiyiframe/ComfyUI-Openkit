@@ -1,4 +1,4 @@
-# ComfyUI-OpenToolkit
+﻿# ComfyUI-Openkit
 
 Open, standardized ComfyUI utility node collection. No black-box encapsulation, every node is transparent and well-documented.
 
@@ -142,18 +142,18 @@ Replaces entity names (characters, props, scenes, keyframes) with corresponding 
 
 ```bash
 cd ComfyUI/custom_nodes/
-git clone https://gitee.com/dbmcp/ComfyUI-OpenToolkit.git
-# or mirror: https://github.com/dbmcp/ComfyUI-OpenToolkit.git
+git clone https://gitee.com/dbmcp/ComfyUI-Openkit.git
+# or mirror: https://github.com/dbmcp/ComfyUI-Openkit.git
 ```
 
 ### Method 2: Manual / 方法二：手动安装
 
 1. Download the repository as ZIP
-2. Extract to `ComfyUI/custom_nodes/ComfyUI-OpenToolkit/`
+2. Extract to `ComfyUI/custom_nodes/ComfyUI-Openkit/`
 3. Restart ComfyUI
 
 1. 下载仓库 ZIP 包
-2. 解压到 `ComfyUI/custom_nodes/ComfyUI-OpenToolkit/`
+2. 解压到 `ComfyUI/custom_nodes/ComfyUI-Openkit/`
 3. 重启 ComfyUI
 
 ---
@@ -201,7 +201,7 @@ git clone https://gitee.com/dbmcp/ComfyUI-OpenToolkit.git
 ## Directory Structure / 目录结构
 
 ```
-ComfyUI-OpenToolkit/
+ComfyUI-Openkit/
 ├── __init__.py              # Plugin entry / 插件入口，注册节点映射
 ├── nodes/
 │   ├── __init__.py          # Node class & display name mappings / 节点类与显示名映射

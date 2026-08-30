@@ -1,4 +1,4 @@
-import numpy as np
+﻿import numpy as np
 import torch
 import torch.nn.functional as F
 
@@ -42,7 +42,7 @@ class MultiframeRef:
     RETURN_NAMES = ("图像",)
     OUTPUT_TOOLTIPS = ("按输入顺序拼接的图像 batch（0..1 float），顺序为：关键帧 → 图像列表1..7 → 背景。每张图仅出现一次，背景永远在最后。",)
     FUNCTION = "collect_images"
-    CATEGORY = "OpenToolkit"
+    CATEGORY = "Openkit"
     DESCRIPTION = (
         "多帧参考节点：收集多张参考图并按顺序输出为一个图像 batch。"
         "关键帧固定首位，图像列表1..7动态扩展（1、2常显，前置连满后依次出现），背景固定末位。"

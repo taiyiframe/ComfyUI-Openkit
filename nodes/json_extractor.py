@@ -1,4 +1,4 @@
-import re
+﻿import re
 import json as _json
 
 
@@ -156,7 +156,7 @@ class JsonExtractor:
     RETURN_TYPES = ("STRING", "STRING", "INT", "STRING", "STRING", "STRING", "STRING", "STRING", "STRING", "FLOAT", "BOOLEAN")
     RETURN_NAMES = OUTPUT_NAMES
     FUNCTION = "extract_json"
-    CATEGORY = "OpenToolkit"
+    CATEGORY = "Openkit"
     OUTPUT_NODE = True
 
     @staticmethod
