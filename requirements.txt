@@ -1,0 +1,3 @@
+# Runtime dependencies for ComfyUI-OpenToolkit
+# Core nodes use only Python standard library (re / json).
+# Add third-party packages here when new nodes require them.
