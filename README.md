@@ -1,4 +1,4 @@
-﻿# ComfyUI-Openkit
+# ComfyUI-Openkit
 
 Open, standardized ComfyUI utility node collection. No black-box encapsulation, every node is transparent and well-documented.
 

@@ -1,4 +1,4 @@
-﻿[project]
+[project]
 name = "ComfyUI-Openkit"
 version = "0.1.0"
 description = "Personal ComfyUI utility node collection"

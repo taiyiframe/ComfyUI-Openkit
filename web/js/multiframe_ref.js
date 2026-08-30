@@ -1,4 +1,4 @@
-﻿const { app } = window.comfyAPI.app;
+const { app } = window.comfyAPI.app;
 
 function registerMultiframeRef(nodeType, portMeta) {
     const onNodeCreated = nodeType.prototype.onNodeCreated;
