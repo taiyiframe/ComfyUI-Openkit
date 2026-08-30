@@ -255,6 +255,12 @@ JavaScript 文件放置在 `web/js/` 下，ComfyUI 启动时自动加载。用�
 
 ## License / 许可证
 
-Open source. Free to use, modify, and distribute.
+本项目采用 **木兰宽松许可证第2版（Mulan Permissive Software License, Version 2, MulanPSL-2.0）**。
 
-开源项目，可自由使用、修改和分发。
+This project is licensed under the **Mulan Permissive Software License, Version 2 (MulanPSL-2.0)**.
+
+- 可自由使用、复制、修改、合并、发布、分发、再许可和销售本软件
+- 必须在所有副本中包含版权声明和许可声明
+- 本软件按"原样"提供，不提供任何明示或暗示的保证
+
+See [LICENSE](LICENSE) for full text. / 完整条款见 [LICENSE](LICENSE) 文件。
