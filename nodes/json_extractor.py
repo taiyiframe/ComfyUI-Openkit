@@ -448,7 +448,7 @@ class JsonExtractor:
         elif bgm_enabled:
             blocks.append("non_diegetic_music:" + ("\n" + BGM if BGM else ""))
         else:
-            blocks.append("non_diegetic_music:\nN/A")
+            blocks.append("non_diegetic_music: N/A")
         if 自定义段落:
             blocks.append(自定义段落)
         return "\n\n".join(blocks)
