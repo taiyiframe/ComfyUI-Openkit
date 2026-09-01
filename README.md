@@ -11,12 +11,14 @@ Open, standardized ComfyUI utility node collection. No black-box encapsulation, 
 - **JSON-driven prompt generation** — Extract structured data from JSON and generate MiniMax H3 six-part standard prompts
 - **Multi-frame reference management** — Organize keyframes, image lists, and background layers with correct index ordering
 - **Subject reference tag replacement** — Replace entity names with `<Subject N>` tags across all prompt sections
+- **H3 multi-segment media loading** — Up to 32 video-segment reference bundles (pictures/videos/audios) with trim, crop, soundtracks, presets
 - **Standard ComfyUI plugin structure** — Follows official conventions, easy to install and extend
 - **Fully documented** — Every input, output, and internal logic is explained
 
 - **JSON 驱动提示词生成** — 从 JSON 提取结构化数据，生成 MiniMax H3 六段式标准提示词
 - **多帧参考管理** — 管理关键帧、图像列表与背景层，索引顺序正确
 - **主体引用标签置换** — 在所有提示词段落中将实体名替换为 `<Subject N>` 标签
+- **H3 多段素材加载** — 最多 32 条视频段参考素材集（图/视频/音频），支持裁剪、裁切、音轨、预设
 - **标准 ComfyUI 插件结构** — 遵循官方规范，易于安装与扩展
 - **完整文档** — 每个输入、输出及内部逻辑均有说明
 
@@ -136,6 +138,54 @@ Replaces entity names (characters, props, scenes, keyframes) with corresponding 
 
 ---
 
+### 4. MiniMaxH3MediaLoader (H3 多段素材加载)
+
+Loads the full reference-media set for multiple MiniMax H3 video segments on a single node. Each of the up-to-32 tracks is one segment's complete reference bundle: pictures (≤9), videos (≤3) and audios (≤3, soundtracks count toward the budget). Per-segment video trim, picture/video crop, soundtrack pairing, drag sorting, enable/disable, budget monitor, presets and H3 tag display are all built in.
+
+单节点加载多个 MiniMax H3 视频段的完整参考素材。最多 32 条滑轨，每条滑轨 = 一个视频段的完整参考素材集：参考图（≤9）、参考视频（≤3）、参考音频（≤3，视频音轨计入预算）。内置每段视频裁剪、图片/视频裁切、音轨配对、拖拽排序、开关、预算监控、预设与 H3 标签显示。
+
+**Inputs / 输入:**
+
+| Port / 端口 | Type / 类型 | Description / 说明 |
+|---|---|---|
+| `tracks_data` | STRING (hidden) | Multi-track JSON, maintained by the panel / 多段素材 JSON，由面板自动维护（隐藏） |
+| `视频索引` | INT | Select which segment the single-output routes to (0-based) / 指定素材输出哪一段（0 起） |
+
+**Outputs / 输出:**
+
+| Port / 端口 | Type / 类型 | Description / 说明 |
+|---|---|---|
+| `全部素材` | H3_REFS | Bundle of all segments / 全部段的参考素材 bundle |
+| `指定素材` | H3_REFS | Single segment routed by 视频索引 / 按视频索引路由的单段素材 bundle |
+| `段数` | INT | Number of configured segments / 已配置的段数 |
+
+**Capabilities / 能力:**
+
+- Up to 32 tracks, each holding one segment's pictures / videos / audios / 最多 32 条滑轨，每轨独立存放图/视频/音频
+- Per-segment budgets: 9 pictures, 3 videos, 3 audio clips (split soundtracks count) / 每段预算：9 图、3 视频、3 音频（分离音轨计入）
+- Video trim (start/end seconds) with preview / 视频裁剪（起止秒）带预览
+- Picture & video crop (normalised rect, draggable) / 图片与视频裁切（归一化矩形，可拖拽）
+- Soundtrack routing per video: paired / standalone / off / 每个视频的音轨路由：配对 / 独立 / 关闭
+- Drag sorting, enable/disable, delete, budget monitor / 拖拽排序、开关、删除、预算监控
+- H3 tag display per item (`<Picture N>` / `<Video N>` / `<Audio N>`) / 每项显示 H3 标签
+- Presets: save / load / delete the whole track set / 预设：整体滑轨集保存/加载/删除
+- Output is flexible: use `全部素材` for batch workflows, or route one segment via `视频索引` for single-shot workflows / 输出灵活：批量流程用「全部素材」，单段流程用「视频索引」路由
+
+**Indexing / 标签编号:**
+
+- Tags are numbered **per segment**, restarting at 1 for each track / 标签按**段内**编号，每段从 1 重新开始
+- Pictures → `<Picture 1..9>` · Videos → `<Video 1..3>` · Audios (incl. split soundtracks) → `<Audio 1..3>`
+- 参考图 → `<Picture 1..9>` · 参考视频 → `<Video 1..3>` · 音频（含分离音轨）→ `<Audio 1..3>`
+
+**Quick start / 快速上手:**
+
+1. Add the node, click 添加段落 to create tracks (up to 32) / 添加节点，点「添加段落」建滑轨（最多 32 条）
+2. In each track use 添加参考图 / 添加参考视频 / 添加参考音频 to upload files / 每段用「添加参考图/视频/音频」上传文件
+3. Use 裁剪 / 裁切 to trim or crop, click the audio-mode chip to pair/split/off a soundtrack / 用「裁剪/裁切」处理素材，点音轨芯片切换配对/独立/关闭
+4. Connect `全部素材` (batch) or set `视频索引` for `指定素材` (single segment) / 连「全部素材」做批量，或设「视频索引」取「指定素材」
+
+---
+
 ## Installation / 安装方法
 
 ### Method 1: Git Clone / 方法一：Git 克隆
@@ -165,12 +215,14 @@ git clone https://gitee.com/dbmcp/ComfyUI-Openkit.git
 1. **JsonExtractor** — Feed your JSON script, select archive type, get structured outputs and the complete H3 prompt
 2. **MultiframeRef** — Connect your keyframe, image list, and background images in order
 3. **SubjectRefTagReplacement** — Pass the generated prompt through this node to standardize subject tags
-4. Connect outputs to your video generation node (e.g., MiniMax H3)
+4. **MiniMaxH3MediaLoader** — Load per-segment reference media, connect `全部素材` or route `指定素材` via `视频索引`
+5. Connect outputs to your video generation node (e.g., MiniMax H3)
 
 1. **JsonExtractor** — 输入 JSON 剧本，选择档案类型，获得结构化输出和完整的 H3 提示词
 2. **MultiframeRef** — 按顺序连接关键帧、图像列表和背景图
 3. **SubjectRefTagReplacement** — 将生成的提示词通过此节点标准化主体标签
-4. 将输出连接到视频生成节点（如 MiniMax H3）
+4. **MiniMaxH3MediaLoader** — 加载各段参考素材，连「全部素材」或按「视频索引」取「指定素材」
+5. 将输出连接到视频生成节点（如 MiniMax H3）
 
 ### JSON Input Format / JSON 输入格式示例
 
@@ -207,10 +259,21 @@ ComfyUI-Openkit/
 │   ├── __init__.py          # Node class & display name mappings / 节点类与显示名映射
 │   ├── json_extractor.py    # JsonExtractor implementation / JSON 提取节点
 │   ├── multiframe_ref.py    # MultiframeRef implementation / 多帧参考节点
-│   └── subject_ref_tag_replacement.py  # SubjectRefTagReplacement / 主体标签置换节点
+│   ├── subject_ref_tag_replacement.py  # SubjectRefTagReplacement / 主体标签置换节点
+│   ├── media_loader.py      # MiniMaxH3MediaLoader implementation / H3 多段素材加载节点
+│   ├── media_io.py          # Image/video/audio decoding helpers / 图/视频/音频解码辅助
+│   └── media_routes.py      # Upload/probe/preset HTTP routes / 上传/探测/预设服务路由
 ├── web/
 │   └── js/
-│       └── multiframe_ref.js  # Frontend dynamic input expansion / 前端动态输入扩展
+│       ├── multiframe_ref.js  # Frontend dynamic input expansion / 前端动态输入扩展
+│       └── media_loader.js    # H3 loader panel (tracks, trim, crop, presets) / H3 加载面板
+├── pkg/
+│   ├── __init__.py          # Offline dependency bootstrap / 离线依赖引导
+│   ├── wheels/              # Vendored backend wheels (e.g. PyAV) / 离线后端 wheel
+│   └── README.md            # Offline dependency policy / 离线依赖说明
+├── tests/
+│   ├── test_media_loader.py # Loader logic tests / 加载节点逻辑测试
+│   └── test_package_load.py # Package registration test / 插件包注册测试
 ├── requirements.txt         # Python dependencies / Python 依赖声明
 ├── pyproject.toml           # Project metadata / 项目元信息
 ├── .gitignore               # Git ignore rules / Git 忽略规则
@@ -242,6 +305,14 @@ ComfyUI-Openkit/
 Place JavaScript files under `web/js/`. They are automatically loaded by ComfyUI on startup. Use for dynamic input visibility, custom widgets, or UI interactions.
 
 JavaScript 文件放置在 `web/js/` 下，ComfyUI 启动时自动加载。用于动态输入显隐、自定义控件或 UI 交互。
+
+---
+
+## Offline Dependencies / 离线依赖
+
+Optional backend wheels (e.g. PyAV) are shipped under `pkg/wheels/` and, if missing on a user machine, are installed automatically into the plugin's own `pkg/site/` on first use — offline, without touching your global Python environment. See `pkg/README.md` for details.
+
+可选后端依赖（如 PyAV）的 wheel 已内置在 `pkg/wheels/`，用户机器缺失时会自动离线安装到插件私有 `pkg/site/`，不污染全局环境。详见 `pkg/README.md`。
 
 ---
 

@@ -13,3 +13,4 @@ Thumbs.db
 .venv/
 venv/
 env/
+pkg/site/
