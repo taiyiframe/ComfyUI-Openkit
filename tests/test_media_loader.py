@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Offline logic test for MiniMaxH3MediaLoader (no ComfyUI needed)."""
+"""Offline logic test for MiniMaxH3MediaLoader + ReferenceSplitter (Fant replica)."""
 import io
 import sys
 import os
@@ -11,17 +11,14 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 
 nodes_dir = r"D:\ComfyUI_ROB2900_H3\ComfyUI\custom_nodes\ComfyUI-Openkit\nodes"
 
-# Register a fake 'nodes' package so relative imports in media_loader work.
 pkg = types.ModuleType("nodes")
 pkg.__path__ = [nodes_dir]
 sys.modules["nodes"] = pkg
 
-# Stub folder_paths.
 fp = types.ModuleType("folder_paths")
 fp.get_input_directory = lambda: "input"
 sys.modules["folder_paths"] = fp
 
-# Stub nodes.media_io with fake decoders.
 import torch
 fake_io = types.ModuleType("nodes.media_io")
 def _fake_img(file, crop=None):
@@ -38,7 +35,7 @@ sys.modules["nodes.media_io"] = fake_io
 
 ml = importlib.import_module("nodes.media_loader")
 
-# ---- Test 1: partition + tags ----
+# ---- Test 1: partition ----
 items = [
     {"kind": "picture", "file": "a.png"},
     {"kind": "picture", "file": "b.png", "enabled": False},
@@ -46,49 +43,98 @@ items = [
     {"kind": "video", "file": "v2.mp4", "has_audio": True, "audio_mode": "standalone"},
     {"kind": "audio", "file": "a1.wav"},
 ]
-pics, vids, vauds, auds = ml.MiniMaxH3MediaLoader._partition(items)
+pics, vids, vauds, auds = ml._partition(items)
 print("Test1 partition:", len(pics), len(vids), len([x for x in vauds if x]), len(auds))
-assert len(pics) == 1, "disabled picture should be skipped"
+assert len(pics) == 1
 assert len(vids) == 2
-assert [x is not None for x in vauds].count(True) == 1, "only paired video yields soundtrack slot"
-assert len(auds) == 2, "standalone video + audio both go to audios"
+assert [x is not None for x in vauds].count(True) == 1
+assert len(auds) == 2
 
-tags = ml.MiniMaxH3MediaLoader._compute_tags(items)
-print("Test1 tags:", tags)
-assert len(tags["tags"]) == 4, "picture + 2 videos + audio = 4 main tags"
-assert len(tags["extra"]) == 2, "paired audio + standalone audio = 2 split tags"
+# ---- Test 2: load_media bundle ----
+state = json.dumps(items, ensure_ascii=False)
+loader = ml.MiniMaxH3MediaLoader()
+bundle = loader.load_media(state)[0]
+print("Test2 bundle:", {k: len(v) for k, v in bundle.items() if k != "items"})
+assert len(bundle["pictures"]) == 1
+assert len(bundle["videos"]) == 2
+assert bundle["video_audios"][0] is not None
+assert bundle["video_audios"][1] is None
+assert len(bundle["audios"]) == 2
+assert bundle["items"] == items
 
-# ---- Test 2: load_segments structure ----
-tracks = json.dumps([
-    {"name": "段落1", "items": items},
-    {"name": "段落2", "items": [
-        {"kind": "picture", "file": "c.png"},
-        {"kind": "audio", "file": "a2.wav"},
-    ]},
-])
-node = ml.MiniMaxH3MediaLoader()
-all_b, sel_b, count = node.load_segments(tracks, 0)
-print("Test2 count:", count)
-assert count == 2
-assert all_b["segment_count"] == 2
-assert len(all_b["segments"][0]["pictures"]) == 1
-assert len(all_b["segments"][0]["videos"]) == 2
-assert all_b["segments"][0]["video_audios"][0] is not None
-assert all_b["segments"][0]["video_audios"][1] is None
-assert len(all_b["segments"][0]["audios"]) == 2
-assert sel_b["segment_count"] == 1
-assert sel_b["segments"][0]["name"] == "段落1"
-print("Test2 selected name:", sel_b["segments"][0]["name"])
+# ---- Test 3: corrupt state rejected ----
+try:
+    loader.load_media("{ not json")
+    assert False, "corrupt state should raise"
+except ValueError as e:
+    print("Test3 corrupt state rejected:", str(e)[:40])
 
-# ---- Test 3: video_index out of range -> empty selected ----
-_, sel_b2, count2 = node.load_segments(tracks, 99)
-print("Test3 out-of-range:", sel_b2["segment_count"])
-assert sel_b2["segment_count"] == 0
+# ---- Test 4: budget validation ----
+too_many = json.dumps([{"kind": "picture", "file": f"p{i}.png"} for i in range(17)])
+res = ml._validate_state(too_many)
+print("Test4 17 pictures ->", res)
+assert "17 pictures" in str(res)
+too_aud = json.dumps([{"kind": "audio", "file": f"a{i}.wav"} for i in range(9)])
+res = ml._validate_state(too_aud)
+print("Test4b 9 audios ->", res)
+assert "9 audio clips" in str(res)
 
-# ---- Test 4: 32 track cap ----
-big = json.dumps([{"name": f"段{i}", "items": [{"kind": "audio", "file": f"a{i}.wav"}]} for i in range(40)])
-_, _, count3 = node.load_segments(big, 0)
-print("Test4 40 tracks -> count:", count3)
-assert count3 == 32, f"expected 32, got {count3}"
+# ---- Test 5: splitter category lists + scalars ----
+splitter = ml.MiniMaxH3ReferenceSplitter()
+out = splitter.split(bundle)
+assert len(out) == 4 + ml.VIDEOS + ml.VIDEO_AUDIOS + ml.AUDIOS == 18
+assert isinstance(out[0], list) and len(out[0]) == 1   # keyframes (1 picture)
+assert isinstance(out[1], list) and out[1] == []        # characters empty
+assert isinstance(out[2], list) and out[2] == []        # props empty
+assert isinstance(out[3], list) and out[3] == []        # scenes empty
+assert out[4] is not None          # video_1
+assert out[7] is not None          # video_audio_1
+assert out[10] is not None         # audio_1
+assert out[17] is None             # audio_8 (empty)
+print("Test5 splitter outputs:", len(out),
+      "= 4 cat-lists +", ml.VIDEOS, "vids +", ml.VIDEO_AUDIOS, "vA +", ml.AUDIOS, "aud")
+
+# ---- Test 6: empty bundle ----
+out2 = splitter.split(None)
+assert all(o == [] for o in out2[:4])
+assert all(o is None for o in out2[4:])
+print("Test6 empty bundle -> 4 empty lists + 9 None OK")
+
+# ---- Test 8: picture category + number sorting ----
+pics = [
+    {"kind": "picture", "file": "s2.png", "category": "场景", "number": 2},
+    {"kind": "picture", "file": "r1.png", "category": "角色", "number": 1},
+    {"kind": "picture", "file": "k3.png", "category": "关键帧", "number": 3},
+    {"kind": "picture", "file": "p1.png", "category": "道具", "number": 1},
+    {"kind": "picture", "file": "k1.png", "category": "关键帧", "number": 1},
+    {"kind": "picture", "file": "legacy.png"},           # no category -> 关键帧
+]
+state8 = json.dumps(pics, ensure_ascii=False)
+b8 = loader.load_media(state8)[0]
+order = [b8["picture_meta"][i][0] + str(b8["picture_meta"][i][1])
+         for i in range(len(b8["picture_meta"]))]
+# 关键帧: legacy(0)->k1->k3, then 角色1, 道具1, 场景2
+assert order[0] == "关键帧0" and order[1] == "关键帧1" and order[2] == "关键帧3", order
+assert order[3] == "角色1" and order[4] == "道具1" and order[5] == "场景2", order
+o8 = splitter.split(b8)
+assert [o8[0].__len__(), o8[1].__len__(), o8[2].__len__(), o8[3].__len__()] == [3, 1, 1, 1]
+print("Test8 category+number sorting OK: 关键帧3 角色1 道具1 场景1")
 
 print("ALL TESTS PASSED")
+
+# ---- Test 7: 1-based track_index routing ----
+multi = json.dumps({"tracks": [
+  {"name": "T1", "items": [{"kind": "picture", "file": "a.png"}]},
+  {"name": "T2", "items": [{"kind": "video", "file": "b.mp4", "has_audio": True}]},
+  {"name": "T3", "items": [{"kind": "audio", "file": "c.wav"}]},
+]}, ensure_ascii=False)
+r = loader.load_media(multi, 1)   # 1-based: track 1
+assert r[1]["items"][0]["kind"] == "picture", r[1]
+r = loader.load_media(multi, 3)   # 1-based: track 3
+assert r[1]["items"][0]["kind"] == "audio", r[1]
+r = loader.load_media(multi, 99)  # clamp to last track
+assert r[1]["items"][0]["kind"] == "audio", r[1]
+r = loader.load_media(multi, 0)   # below min -> track 1
+assert r[1]["items"][0]["kind"] == "picture", r[1]
+assert r[2] == 3
+print("Test7 1-based track_index routing OK (1/3/99/0 -> picture/audio/audio/picture, count=3)")

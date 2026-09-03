@@ -93,42 +93,43 @@ class JsonExtractor:
                     "tooltip": "JSON 数据输入，支持 JSON 字符串或对象。字符串可为多个 JSON 对象拼接，自动逐段解析合并提取。"
                 }),
                 "索引": ("INT", {
-                    "default": 1,
-                    "min": 1,
+                    "default": 0,
+                    "min": 0,
+                    "max": 64,
                     "step": 1,
-                    "tooltip": "对应分镜序列/分镜情节中的「编号」值，选择该编号的分镜。"
+                    "tooltip": "选择第几个分镜，索引从 0 开始（0=第一个分镜，1=第二个分镜…）。下方「索引控制」下拉（由前端为 number 输入自动生成）可在每次生成前自动固定/增加/减少/随机本索引（randomize 在 0~64 内取值，越界自动循环映射到有效分镜）。"
                 }),
                 "档案选择": (["角色档案", "音色档案", "道具档案", "场景档案", "关键帧档案"], {
                     "default": "角色档案",
                     "tooltip": "选择「档案」输出端口输出的档案类型：角色档案、音色档案、道具档案、场景档案或关键帧档案。"
                 }),
+                "关键帧开关": ("BOOLEAN", {
+                    "default": True,
+                    "label_on": "输出",
+                    "label_off": "不输出",
+                    "display_name": "关键帧索引",
+                    "tooltip": "控制「关键帧索引」端口输出：开=输出匹配到的关键帧档案0基序号（逗号分隔）；关=索引输出为空。关键帧档案描述始终 1:1 写入最终提示词（subject_definitions / retention_analysis / 角色道具场景），关闭时该档案不加「完全参照 <Picture N> 外观」，改为「以文字定义描述为准」。"
+                }),
                 "角色开关": ("BOOLEAN", {
                     "default": True,
                     "label_on": "输出",
                     "label_off": "不输出",
-                    "display_name": "角色输出",
-                    "tooltip": "控制「角色索引」端口：开=输出匹配到的角色档案0基序号，关=输出空文本。"
+                    "display_name": "角色索引",
+                    "tooltip": "控制「角色索引」端口输出：开=输出匹配到的角色档案0基序号（逗号分隔）；关=索引输出为空。角色档案描述始终 1:1 写入最终提示词（subject_definitions / retention_analysis / 角色道具场景），关闭时该档案不加「完全参照 <Picture N> 外观」，改为「以文字定义描述为准」。"
                 }),
                 "道具开关": ("BOOLEAN", {
                     "default": True,
                     "label_on": "输出",
                     "label_off": "不输出",
-                    "display_name": "道具输出",
-                    "tooltip": "控制「道具索引」端口：开=输出匹配到的道具档案0基序号，关=输出空文本。"
+                    "display_name": "道具索引",
+                    "tooltip": "控制「道具索引」端口输出：开=输出匹配到的道具档案0基序号（逗号分隔）；关=索引输出为空。道具档案描述始终 1:1 写入最终提示词（subject_definitions / retention_analysis / 角色道具场景），关闭时该档案不加「完全参照 <Picture N> 外观」，改为「以文字定义描述为准」。"
                 }),
                 "场景开关": ("BOOLEAN", {
                     "default": True,
                     "label_on": "输出",
                     "label_off": "不输出",
-                    "display_name": "场景输出",
-                    "tooltip": "控制「场景索引」端口：开=输出匹配到的场景档案0基序号，关=输出空文本。"
-                }),
-                "关键帧开关": ("BOOLEAN", {
-                    "default": True,
-                    "label_on": "输出",
-                    "label_off": "不输出",
-                    "display_name": "关键帧输出",
-                    "tooltip": "控制「关键帧索引」端口：开=输出匹配到的关键帧档案0基序号，关=输出空文本。"
+                    "display_name": "场景索引",
+                    "tooltip": "控制「场景索引」端口输出：开=输出匹配到的场景档案0基序号；关=索引输出为空。场景档案描述始终 1:1 写入最终提示词（subject_definitions / retention_analysis / 角色道具场景），关闭时该档案不加「完全参照 <Picture N> 外观」，改为「以文字定义描述为准」。"
                 }),
                 "BGM开关": ("BOOLEAN", {
                     "default": True,
@@ -217,6 +218,29 @@ class JsonExtractor:
             if sep in s:
                 return s.split(sep)[0].strip()
         return s.strip()
+
+    @staticmethod
+    def _extract_keyframe_name(entry):
+        """Extract a short keyframe name from a 关键帧档案 entry.
+
+        Mirrors the 角色 archive filtering: 角色 entries are "名字，描述…" so
+        _extract_name keeps the leading name; 关键帧 entries are commonly
+        "名称：描述…" (colon-prefixed, e.g. "祭月天问起始帧：咸阳宫祭月高台月夜…").
+        Trying the colon first collapses that to "祭月天问起始帧", which then
+        matches the 【祭月天问起始帧】 references in shot summaries through the
+        same text-matching path the 角色 archive uses. Falls back to comma
+        splitting, then to the whole entry, for plain description archives."""
+        s = str(entry) if entry is not None else ""
+        for sep in ("\uff1a", ":"):
+            if sep in s:
+                head = s.split(sep)[0].strip()
+                if head:
+                    return head
+        for sep in ("\uff0c", ","):
+            if sep in s:
+                return s.split(sep)[0].strip()
+        return s.strip()
+
 
     @staticmethod
     def _find_appearing_indices(text, char_names, prop_names):
@@ -323,9 +347,13 @@ class JsonExtractor:
         if not subjects:
             return ""
         lines = []
-        for stype, desc, snum, pnum in subjects:
+        for item in subjects:
+            stype, desc, snum, pnum = item[0], item[1], item[2], item[3]
+            enabled = item[4] if len(item) > 4 else True
             d = desc.rstrip("。.")
-            if stype == 'scene':
+            if not enabled:
+                lines.append(f"<Subject {snum}>：{d}。以文字定义描述为准。")
+            elif stype == 'scene':
                 lines.append(f"<Subject {snum}>：{d}。无参考图，由文字描述定义。")
             else:
                 lines.append(f"<Subject {snum}>：{d}。完全参照 <Picture {pnum}> 外观。")
@@ -336,7 +364,8 @@ class JsonExtractor:
         if not subjects:
             return ""
         lines = []
-        for stype, desc, snum, pnum in subjects:
+        for item in subjects:
+            stype, desc, snum, pnum = item[0], item[1], item[2], item[3]
             lines.append(f"<Subject {snum}>：fully_preserved {desc}")
         return "\n".join(lines)
 
@@ -345,7 +374,8 @@ class JsonExtractor:
         if not subjects:
             return ""
         lines = []
-        for stype, desc, snum, pnum in subjects:
+        for item in subjects:
+            stype, desc, snum, pnum = item[0], item[1], item[2], item[3]
             name = JsonExtractor._extract_name(desc)
             lines.append(f"<Subject {snum}>：{name}")
         return "\n".join(lines)
@@ -540,6 +570,18 @@ class JsonExtractor:
         }.get(档案选择, 0)
 
         分镜序列数据 = data.get("分镜序列", [])
+        # 索引容错：索引为 0-based 位置（0=第一个分镜），control_after_generate
+        # (randomize/increment/decrement) 在前端可能产生任意大索引或越界值，
+        # 这里按位置取模映射到有效分镜编号（保证 randomize 随机大数也能命中一个真实分镜，越界自动循环）。
+        try:
+            索引 = int(索引)
+        except (TypeError, ValueError):
+            索引 = 0
+        if isinstance(分镜序列数据, list) and 分镜序列数据:
+            _nums = [item.get("编号") for item in 分镜序列数据 if isinstance(item, dict) and isinstance(item.get("编号"), int)]
+            if _nums:
+                _sorted_nums = sorted(_nums)
+                索引 = _sorted_nums[索引 % len(_sorted_nums)]
         分镜情节数据 = data.get("分镜情节", [])
         分镜序列文本 = ""
         运镜 = []
@@ -587,7 +629,7 @@ class JsonExtractor:
         else:
             char_names = [self._extract_name(e) for e in (角色档案数据 if isinstance(角色档案数据, list) else [])]
             prop_names = [self._extract_name(e) for e in (道具档案数据 if isinstance(道具档案数据, list) else [])]
-            keyframe_names = [self._extract_name(e) for e in (关键帧档案数据 if isinstance(关键帧档案数据, list) else [])]
+            keyframe_names = [self._extract_keyframe_name(e) for e in (关键帧档案数据 if isinstance(关键帧档案数据, list) else [])]
 
             出现角色 = 情节条目.get("出现角色") if 情节条目 is not None else None
             出现道具 = 情节条目.get("出现道具") if 情节条目 is not None else None
@@ -607,11 +649,17 @@ class JsonExtractor:
                 if prop_indices is None:
                     prop_indices = text_prop
 
+            # Keyframe resolution mirrors the 角色 archive path exactly:
+            # try the 出现关键帧 field first, then fall back to matching the
+            # keyframe archive names directly inside the current shot's own
+            # text (运镜 + 摘要) via the same _find_appearing_indices used for
+            # 角色. NO 【】/[] bracket parsing (台词 [Chinese] tags are never
+            # treated as keyframes).
             if keyframe_indices is None:
                 match_text = 分镜序列文本
                 if 摘要:
                     match_text = match_text + "\n" + 摘要
-                keyframe_indices = self._find_keyframe_indices(match_text, keyframe_names)
+                keyframe_indices, _ = self._find_appearing_indices(match_text, keyframe_names, [])
 
             角色描述列表 = []
             if isinstance(角色档案数据, list):
@@ -656,29 +704,40 @@ class JsonExtractor:
             场景索引 = (str(idx) if idx >= 0 else "") if 场景开关 else ""
             关键帧索引 = ",".join(str(i) for i in keyframe_indices) if 关键帧开关 else ""
 
+            # Category switches now control ONLY the index ports. Subject
+            # definitions are always written 1:1 into the final prompt; a
+            # category whose switch is OFF keeps its archive description but
+            # drops the "完全参照 <Picture N> 外观" clause in favor of
+            # "以文字定义描述为准" (its <Picture N> number is not consumed).
             subjects = []
             subject_counter = 1
             for desc in 角色描述列表:
-                subjects.append(('char', desc, subject_counter, None))
+                subjects.append(('char', desc, subject_counter, None, 角色开关))
                 subject_counter += 1
             for desc in 道具描述列表:
-                subjects.append(('prop', desc, subject_counter, None))
+                subjects.append(('prop', desc, subject_counter, None, 道具开关))
                 subject_counter += 1
             if 场景描述:
-                subjects.append(('scene', 场景描述, subject_counter, None))
+                subjects.append(('scene', 场景描述, subject_counter, None, 场景开关))
                 subject_counter += 1
             for desc in 关键帧描述列表:
-                subjects.append(('keyframe', desc, subject_counter, None))
+                subjects.append(('keyframe', desc, subject_counter, None, 关键帧开关))
                 subject_counter += 1
 
+            # Assign <Picture N> numbers only to categories whose switch is ON
+            # (OFF categories carry pnum=None and get "以文字定义描述为准").
             pic_counter = 1
-            for i, (stype, desc, snum, _) in enumerate(subjects):
+            for i, item in enumerate(subjects):
+                stype, desc, snum, pnum, en = item
+                if not en:
+                    continue
                 if stype == 'keyframe':
-                    subjects[i] = (stype, desc, snum, pic_counter)
+                    subjects[i] = (stype, desc, snum, pic_counter, en)
                     pic_counter += 1
-            for i, (stype, desc, snum, pnum) in enumerate(subjects):
-                if stype in ('char', 'prop') and pnum is None:
-                    subjects[i] = (stype, desc, snum, pic_counter)
+            for i, item in enumerate(subjects):
+                stype, desc, snum, pnum, en = item
+                if en and stype in ('char', 'prop') and pnum is None:
+                    subjects[i] = (stype, desc, snum, pic_counter, en)
                     pic_counter += 1
 
             主体定义 = self._build_subject_definitions(subjects)

@@ -37,7 +37,12 @@ class MultiframeRef:
                 "background": ("IMAGE", {"display_name": "背景", "tooltip": "背景图像（可留空），固定在最后一个端口，不计入主体8张上限，输出时永远排在最后。"}),
             },
         }
+    # Each picture input may receive a list (splitter category lists) or a
+    # single IMAGE; declare INPUT_IS_LIST so ComfyUI never slices empty lists
+    # (which would crash the framework with IndexError) and we unwrap inside.
+    INPUT_IS_LIST = True
 
+    
     RETURN_TYPES = ("IMAGE",)
     RETURN_NAMES = ("图像",)
     OUTPUT_TOOLTIPS = ("按输入顺序拼接的图像 batch（0..1 float），顺序为：关键帧 → 图像列表1..7 → 背景。每张图仅出现一次，背景永远在最后。",)
@@ -57,24 +62,39 @@ class MultiframeRef:
             return True
         t = image
         if isinstance(t, torch.Tensor):
+            # 0-batch tensor: connected source produced no frames
+            if t.ndim == 4 and t.shape[0] == 0:
+                return True
             if t.ndim == 4 and t.shape[0] == 1 and t.shape[1] == 64 and t.shape[2] == 64 and t.shape[3] == 3:
                 try:
                     return bool(torch.allclose(t.float(), torch.zeros_like(t.float()), atol=1e-6))
                 except Exception:
                     return False
             return False
-        if isinstance(t, (list, tuple)) and len(t) == 1:
-            return MultiframeRef._is_empty_fallback_image(t[0])
+        if isinstance(t, (list, tuple)):
+            # empty python list: connected source that yielded nothing
+            if len(t) == 0:
+                return True
+            # a list whose every item is empty is itself empty
+            if all(MultiframeRef._is_empty_fallback_image(x) for x in t):
+                return True
+            if len(t) == 1:
+                return MultiframeRef._is_empty_fallback_image(t[0])
+            return False
         return False
 
     @staticmethod
     def _tensor_to_rgb_array(image):
         if isinstance(image, torch.Tensor):
             if image.ndim == 4:
+                if image.shape[0] == 0:
+                    raise ValueError("empty image batch (0 frames)")
                 image = image[0]
-            image = image.detach().cpu().numpy()
+        image = image.detach().cpu().numpy()
 
         image = np.asarray(image)
+        if image.size == 0:
+            raise ValueError("empty image array")
         if image.dtype != np.uint8:
             image = np.clip(image * 255.0, 0, 255).astype(np.uint8)
 
@@ -154,11 +174,34 @@ class MultiframeRef:
             for img in image_list:
                 if n >= limit_per_list:
                     return
+                if img is None:
+                    continue
                 yield prepare(img, target_size, preserve_full=True)
                 n += 1
 
+    @staticmethod
+    def _first_valid(value):
+        """Return the first usable image from a value that may be None, an
+        empty/all-empty list, a single tensor, or a list of tensors. Returns
+        None when nothing usable is present (equivalent to a disconnected
+        input)."""
+        if MultiframeRef._is_empty_fallback_image(value):
+            return None
+        if isinstance(value, (list, tuple)):
+            for x in value:
+                if not MultiframeRef._is_empty_fallback_image(x):
+                    return MultiframeRef._first_valid(x)
+            return None
+        return value
+
     def collect_images(self, width, height, **kwargs):
-        background = kwargs.get("background")
+        # INPUT_IS_LIST keeps every input a list; unwrap scalar dimensions.
+        if isinstance(width, (list, tuple)):
+            width = width[0] if width else 64
+        if isinstance(height, (list, tuple)):
+            height = height[0] if height else 64
+        background = MultiframeRef._first_valid(kwargs.get("background"))
+        keyframe_img = MultiframeRef._first_valid(kwargs.get("keyframe"))
         prepare = self._prepare_image
         target_size = (width, height)
 
@@ -166,8 +209,7 @@ class MultiframeRef:
         TOTAL_LIMIT = 8
         LIMIT_PER_LIST = 8
 
-        keyframe_img = kwargs.get("keyframe")
-        if not MultiframeRef._is_empty_fallback_image(keyframe_img):
+        if keyframe_img is not None:
             for prepared in self._iter_tensor_images(keyframe_img, LIMIT_PER_LIST, prepare, target_size):
                 subjects.append(prepared)
                 if len(subjects) >= TOTAL_LIMIT:
@@ -185,9 +227,9 @@ class MultiframeRef:
                 if len(subjects) >= TOTAL_LIMIT:
                     break
 
-        bg_is_empty = MultiframeRef._is_empty_fallback_image(background)
-        background_image = None if bg_is_empty else (
-            prepare(background, target_size, preserve_full=False) if background is not None else None
+        bg_is_empty = background is None
+        background_image = None if bg_is_empty else prepare(
+            background, target_size, preserve_full=False
         )
 
         all_images = list(subjects)

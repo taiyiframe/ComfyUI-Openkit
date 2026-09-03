@@ -9,7 +9,6 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 
 root = r"D:\ComfyUI_ROB2900_H3\ComfyUI\custom_nodes\ComfyUI-Openkit"
 
-# Stub ComfyUI core modules so the package imports outside ComfyUI.
 fp = types.ModuleType("folder_paths")
 fp.get_input_directory = lambda: "input"
 fp.get_output_directory = lambda: "output"
@@ -22,7 +21,6 @@ server_mod = types.ModuleType("server")
 server_mod.PromptServer = None
 sys.modules["server"] = server_mod
 
-# Import the nodes package the way ComfyUI's import hook would.
 sys.path.insert(0, root)
 nodes = importlib.import_module("nodes")
 
@@ -30,26 +28,40 @@ print("NODE_CLASS_MAPPINGS:", list(nodes.NODE_CLASS_MAPPINGS.keys()))
 print("NODE_DISPLAY_NAME_MAPPINGS:", nodes.NODE_DISPLAY_NAME_MAPPINGS)
 
 assert "MiniMaxH3MediaLoader" in nodes.NODE_CLASS_MAPPINGS
-assert nodes.NODE_DISPLAY_NAME_MAPPINGS["MiniMaxH3MediaLoader"] == "H3 多段素材加载"
+assert "MiniMaxH3ReferenceSplitter" in nodes.NODE_CLASS_MAPPINGS
 assert "JsonExtractor" in nodes.NODE_CLASS_MAPPINGS
 assert "MultiframeRef" in nodes.NODE_CLASS_MAPPINGS
 assert "SubjectRefTagReplacement" in nodes.NODE_CLASS_MAPPINGS
 
-# Verify the loader node's I/O contract.
-cls = nodes.NODE_CLASS_MAPPINGS["MiniMaxH3MediaLoader"]
-inputs = cls.INPUT_TYPES()
-assert "tracks_data" in inputs["required"]
-assert "video_index" in inputs["required"]
-assert cls.RETURN_TYPES == ("H3_REFS", "H3_REFS", "INT")
-assert cls.RETURN_NAMES == ("全部素材", "指定素材", "段数")
-assert cls.FUNCTION == "load_segments"
-assert cls.CATEGORY == "Openkit"
-print("INPUT_TYPES keys:", list(inputs["required"].keys()))
-print("RETURN_TYPES:", cls.RETURN_TYPES)
-print("LOADER NODE CONTRACT OK")
+# Loader contract (multi-track, legacy V2 API).
+loader = nodes.NODE_CLASS_MAPPINGS["MiniMaxH3MediaLoader"]
+inputs = loader.INPUT_TYPES()
+assert "media_state" in inputs["required"]
+assert "track_index" in inputs["required"]
+assert loader.RETURN_TYPES == ("H3_REFS", "H3_REFS", "INT")
+assert loader.RETURN_NAMES == ("references", "track_references", "track_count")
+assert loader.FUNCTION == "load_media"
+assert loader.CATEGORY == "Openkit"
+assert loader.VALIDATE_INPUTS("[]") is True
+assert loader.VALIDATE_INPUTS("{ not json") != True
+print("Loader contract OK: multi-track -> references / track_references / track_count")
 
-# media_routes should be importable without registering (PromptServer=None).
+# Splitter contract.
+splitter = nodes.NODE_CLASS_MAPPINGS["MiniMaxH3ReferenceSplitter"]
+sinputs = splitter.INPUT_TYPES()
+assert sinputs["required"]["references"][0] == "H3_REFS"
+assert isinstance(sinputs["required"]["references"][1], dict)
+assert "tooltip" in sinputs["required"]["references"][1]
+assert splitter.RETURN_NAMES[:4] == ("关键帧", "角色", "道具", "场景")
+assert len(splitter.OUTPUT_TOOLTIPS) == 18
+assert len(splitter.RETURN_TYPES) == 18
+assert splitter.OUTPUT_IS_LIST[:4] == (True, True, True, True)
+assert all(v is False for v in splitter.OUTPUT_IS_LIST[4:])
+assert splitter.RETURN_TYPES[0] == "IMAGE" and splitter.RETURN_TYPES[4] == "IMAGE"
+assert splitter.RETURN_TYPES[7] == "AUDIO" and splitter.RETURN_TYPES[10] == "AUDIO"
+print("Splitter contract OK: 4 category lists + 3 IMAGE + 3 AUDIO + 8 AUDIO")
+
 assert "nodes.media_routes" in sys.modules
-print("media_routes imported safely (no routes registered outside ComfyUI)")
+print("media_routes imported safely")
 
 print("PACKAGE LOAD TEST PASSED")
