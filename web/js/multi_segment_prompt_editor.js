@@ -119,6 +119,20 @@ const CSS = `
 .mspe-modal-btn.ok:hover{background:#a04545;}
 .mspe-shot-type-row{display:flex;align-items:center;gap:6px;}
 .mspe-colon{color:#8a93a3;font-size:12px;}
+.mspe-toolbar{display:flex;align-items:center;justify-content:space-between;
+  gap:6px;flex:0 0 auto;margin-bottom:2px;}
+.mspe-preview-btn{background:#2b3140;border:1px solid #3a4252;color:#d7dbe2;
+  border-radius:6px;padding:4px 12px;font-size:11px;cursor:pointer;flex:0 0 auto;
+  font-family:system-ui,sans-serif;}
+.mspe-preview-btn:hover{background:#333b4d;border-color:#4a5568;}
+.mspe-preview-btn.active{background:#3a5a40;border-color:#4a7c59;color:#fff;}
+.mspe-preview-textarea{width:100%;flex:1;min-height:200px;background:#0d1015;
+  color:#a8d5a8;border:1px solid #2a2f3a;border-radius:6px;padding:8px;
+  font-size:11px;font-family:ui-monospace,Consolas,monospace;resize:none;
+  box-sizing:border-box;white-space:pre;overflow:auto;line-height:1.6;
+  height:100%;}
+.mspe-preview-label{font-size:11px;color:#6b7280;margin-bottom:2px;
+  letter-spacing:.03em;flex:0 0 auto;}
 `;
 
 let cssDone = false;
@@ -216,6 +230,7 @@ app.registerExtension({
 
       this._data = deepClone(DEFAULT_DATA);
       this._curModule = 0;
+      this._previewMode = false;
       // 各 list_str 模块的当前子项索引
       this._curItem = {};
       MODULES.forEach((m) => { if (m.type === "list_str") this._curItem[m.key] = 0; });
@@ -236,9 +251,22 @@ app.registerExtension({
 
       // 根容器
       const root = makeEl("div", "mspe-root");
+      // 工具栏：预览按钮
+      const toolbar = makeEl("div", "mspe-toolbar");
+      const spacer = makeEl("div");
+      spacer.style.flex = "1";
+      const previewBtn = makeEl("button", "mspe-preview-btn", "预览 JSON");
+      previewBtn.title = "点击切换到 JSON 预览模式（只读），再次点击返回编辑";
+      previewBtn.addEventListener("click", () => {
+        this._previewMode = !this._previewMode;
+        previewBtn.classList.toggle("active", this._previewMode);
+        previewBtn.textContent = this._previewMode ? "返回编辑" : "预览 JSON";
+        this._renderContent();
+      });
+      toolbar.append(spacer, previewBtn);
       const topTabbar = makeEl("div", "mspe-tabbar");
       const content = makeEl("div", "mspe-content");
-      root.append(topTabbar, content);
+      root.append(toolbar, topTabbar, content);
 
       const domWidget = this.addDOMWidget("mspe_panel", "div", root, {
         getMinHeight: () => 360,
@@ -255,7 +283,7 @@ app.registerExtension({
       this.size[0] = Math.max(440, this.size[0] || 0);
       this.size[1] = Math.max(400, this.size[1] || 0);
 
-      this._dom = { root, topTabbar, content };
+      this._dom = { root, toolbar, previewBtn, topTabbar, content };
 
       /* ---- 二次确认 ---- */
       this._confirm = (msg, onOk) => {
@@ -301,6 +329,21 @@ app.registerExtension({
       this._renderContent = () => {
         const c = this._dom.content;
         c.innerHTML = "";
+
+        // 预览模式：显示只读 JSON 文本框，隐藏顶层 Tab 栏
+        if (this._previewMode) {
+          this._dom.topTabbar.style.display = "none";
+          const label = makeEl("div", "mspe-preview-label", "JSON 预览（只读，实时同步编辑内容）");
+          const ta = makeEl("textarea", "mspe-preview-textarea");
+          ta.readOnly = true;
+          ta.spellcheck = false;
+          ta.value = JSON.stringify(this._data, null, 2);
+          c.append(label, ta);
+          return;
+        }
+
+        // 编辑模式：显示顶层 Tab 栏
+        this._dom.topTabbar.style.display = "";
         const mod = MODULES[this._curModule];
         const data = this._data;
 
@@ -616,6 +659,11 @@ app.registerExtension({
         }
         this._data = merged;
         this._curModule = 0;
+        this._previewMode = false;
+        if (this._dom?.previewBtn) {
+          this._dom.previewBtn.classList.remove("active");
+          this._dom.previewBtn.textContent = "预览 JSON";
+        }
         MODULES.forEach((m) => { if (m.type === "list_str") this._curItem[m.key] = 0; });
         this._curShot = 0;
         this._curMove = 0;
