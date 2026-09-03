@@ -567,8 +567,8 @@ const CSS = `
   text-shadow:0 1px 2px rgba(0,0,0,.9);z-index:2;}
 .mml-dims:empty{display:none;}
 .mml-lightdims{font-size:10px;color:#8a93a3;font-family:ui-monospace,monospace;}
-.mml-pic{position:absolute;left:0;right:0;top:24px;bottom:0;width:100%;height:auto;max-width:100%;
-  max-height:100%;object-fit:cover;
+.mml-pic{position:absolute;left:0;right:0;top:24px;bottom:0;width:100%;
+  object-fit:cover;object-position:center center;
   display:block;cursor:zoom-in;background:#0d1015;}
 .mml-picbar{position:absolute;left:0;right:0;bottom:0;display:flex;align-items:center;
   gap:4px;padding:1px 4px;background:rgba(10,12,16,.82);min-width:0;overflow:hidden;}
