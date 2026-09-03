@@ -143,6 +143,7 @@ const CSS = `
   white-space:nowrap;}
 .mspe-validate-msg.ok{color:#52c41a;}
 .mspe-validate-msg.err{color:#ff6b6b;}
+.mspe-validate-msg.warn{color:#faad14;}
 .mspe-tab-rename{width:120px;background:#12151b;color:#dde2ea;
   border:1px solid #4a5568;border-radius:4px;padding:1px 4px;font-size:11px;
   box-sizing:border-box;font-family:system-ui,sans-serif;}
@@ -322,15 +323,15 @@ app.registerExtension({
       previewBtn.title = "点击切换到 JSON 预览/编辑模式，再次点击返回可视化编辑";
       previewBtn.addEventListener("click", () => {
         if (this._previewMode) {
-          // 从预览切回编辑：先校验 JSON
+          // 从预览切回编辑：先校验 JSON 格式
           const ta = this._dom.content.querySelector(".mspe-preview-textarea");
           if (ta) {
             const result = this._validateJson(ta.value);
             if (!result.ok) {
-              this._showValidateMsg(false, "JSON 格式错误：" + result.error + "，请修正后再切换");
+              this._showValidateMsg("err", result.error + "，请修正后再切换");
               return;
             }
-            // 校验通过，更新数据
+            // 格式正确且编号无问题，更新数据
             this._data = result.data;
             this._syncJson();
           }
@@ -389,29 +390,72 @@ app.registerExtension({
         if (w) w.value = JSON.stringify(this._data, null, 2);
       };
 
-      /* ---- JSON 校验 ---- */
+      /* ---- JSON 校验（含分镜编号重复/顺序检查，编号问题等同格式错误） ---- */
       this._validateJson = (text) => {
+        // 1. 格式校验
+        let data;
         try {
-          const data = JSON.parse(text);
-          if (typeof data !== "object" || data === null || Array.isArray(data)) {
-            return { ok: false, error: "根节点必须是对象" };
-          }
-          return { ok: true, data: data };
+          data = JSON.parse(text);
         } catch (e) {
-          return { ok: false, error: e.message };
+          return { ok: false, error: "JSON 格式错误：" + e.message };
         }
+        if (typeof data !== "object" || data === null || Array.isArray(data)) {
+          return { ok: false, error: "根节点必须是对象" };
+        }
+
+        // 2. 分镜序列编号检查（编号重复或顺序不对等同格式错误，阻止切换）
+        const shots = data["分镜序列"];
+        if (Array.isArray(shots) && shots.length > 0) {
+          const nums = [];
+          const problems = [];
+          shots.forEach((s, i) => {
+            const n = s ? parseInt(s["编号"], 10) : NaN;
+            if (Number.isNaN(n)) {
+              problems.push("第 " + (i + 1) + " 个分镜缺少有效编号");
+            } else {
+              nums.push({ idx: i, num: n });
+            }
+          });
+
+          // 编号重复检查
+          const seen = {};
+          const dups = [];
+          nums.forEach((item) => {
+            if (seen[item.num]) dups.push(item.num);
+            seen[item.num] = true;
+          });
+          if (dups.length > 0) {
+            problems.push("分镜编号重复：" + dups.join("、"));
+          }
+
+          // 编号顺序检查
+          for (let i = 1; i < nums.length; i++) {
+            if (nums[i].num <= nums[i - 1].num) {
+              problems.push("分镜编号未按从小到大排列：第 " + (nums[i - 1].idx + 1) +
+                " 个分镜编号 " + nums[i - 1].num + " ≥ 第 " + (nums[i].idx + 1) +
+                " 个分镜编号 " + nums[i].num);
+              break;
+            }
+          }
+
+          if (problems.length > 0) {
+            return { ok: false, error: "分镜编号问题：" + problems.join("；") + "。请修正后再切换。" };
+          }
+        }
+
+        return { ok: true, data: data };
       };
 
-      /* ---- 显示校验提示 ---- */
-      this._showValidateMsg = (ok, msg) => {
+      /* ---- 显示校验提示（type: ok / warn / err） ---- */
+      this._showValidateMsg = (type, msg) => {
         const el = this._dom.content.querySelector(".mspe-validate-msg");
         if (el) {
           el.textContent = msg;
-          el.className = "mspe-validate-msg " + (ok ? "ok" : "err");
+          el.className = "mspe-validate-msg " + type;
         }
         const ta = this._dom.content.querySelector(".mspe-preview-textarea");
         if (ta) {
-          ta.classList.toggle("error", !ok);
+          ta.classList.toggle("error", type === "err");
         }
       };
 
@@ -453,12 +497,12 @@ app.registerExtension({
           ta.placeholder = "在此粘贴或编辑完整 JSON…";
           validateBtn.addEventListener("click", () => {
             const result = this._validateJson(ta.value);
-            if (result.ok) {
+            if (!result.ok) {
+              this._showValidateMsg("err", result.error);
+            } else {
               this._data = result.data;
               this._syncJson();
-              this._showValidateMsg(true, "格式校验通过，数据已同步");
-            } else {
-              this._showValidateMsg(false, "格式错误：" + result.error);
+              this._showValidateMsg("ok", "格式校验通过，数据已同步");
             }
           });
           c.append(ptoolbar, ta);
