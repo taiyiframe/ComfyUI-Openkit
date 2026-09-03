@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Offline logic test for MiniMaxH3MediaLoader + ReferenceSplitter (Fant replica)."""
+"""Offline logic test for MediaLoader + ReferenceSplitter."""
 import io
 import sys
 import os
@@ -52,8 +52,8 @@ assert len(auds) == 2
 
 # ---- Test 2: load_media bundle ----
 state = json.dumps(items, ensure_ascii=False)
-loader = ml.MiniMaxH3MediaLoader()
-bundle = loader.load_media(state)[0]
+loader = ml.MediaLoader()
+bundle = loader.load_media(media_state=state)[0]
 print("Test2 bundle:", {k: len(v) for k, v in bundle.items() if k != "items"})
 assert len(bundle["pictures"]) == 1
 assert len(bundle["videos"]) == 2
@@ -64,23 +64,23 @@ assert bundle["items"] == items
 
 # ---- Test 3: corrupt state rejected ----
 try:
-    loader.load_media("{ not json")
+    loader.load_media(media_state="{ not json")
     assert False, "corrupt state should raise"
 except ValueError as e:
     print("Test3 corrupt state rejected:", str(e)[:40])
 
 # ---- Test 4: budget validation ----
-too_many = json.dumps([{"kind": "picture", "file": f"p{i}.png"} for i in range(17)])
+too_many = json.dumps([{"kind": "picture", "file": f"p{i}.png"} for i in range(33)])
 res = ml._validate_state(too_many)
-print("Test4 17 pictures ->", res)
-assert "17 pictures" in str(res)
+print("Test4 33 pictures ->", res)
+assert "33 pictures" in str(res)
 too_aud = json.dumps([{"kind": "audio", "file": f"a{i}.wav"} for i in range(9)])
 res = ml._validate_state(too_aud)
 print("Test4b 9 audios ->", res)
 assert "9 audio clips" in str(res)
 
 # ---- Test 5: splitter category lists + scalars ----
-splitter = ml.MiniMaxH3ReferenceSplitter()
+splitter = ml.ReferenceSplitter()
 out = splitter.split(bundle)
 assert len(out) == 4 + ml.VIDEOS + ml.VIDEO_AUDIOS + ml.AUDIOS == 18
 assert isinstance(out[0], list) and len(out[0]) == 1   # keyframes (1 picture)
@@ -122,19 +122,19 @@ print("Test8 category+number sorting OK: 关键帧3 角色1 道具1 场景1")
 
 print("ALL TESTS PASSED")
 
-# ---- Test 7: 1-based track_index routing ----
-multi = json.dumps({"tracks": [
+# ---- Test 7: 0-based tab_index routing ----
+multi = json.dumps({"tabs": [
   {"name": "T1", "items": [{"kind": "picture", "file": "a.png"}]},
   {"name": "T2", "items": [{"kind": "video", "file": "b.mp4", "has_audio": True}]},
   {"name": "T3", "items": [{"kind": "audio", "file": "c.wav"}]},
 ]}, ensure_ascii=False)
-r = loader.load_media(multi, 1)   # 1-based: track 1
+r = loader.load_media(media_state=multi, tab_index=0)   # 0-based: tab 0
 assert r[1]["items"][0]["kind"] == "picture", r[1]
-r = loader.load_media(multi, 3)   # 1-based: track 3
+r = loader.load_media(media_state=multi, tab_index=2)   # 0-based: tab 2
 assert r[1]["items"][0]["kind"] == "audio", r[1]
-r = loader.load_media(multi, 99)  # clamp to last track
+r = loader.load_media(media_state=multi, tab_index=99)  # clamp to last tab
 assert r[1]["items"][0]["kind"] == "audio", r[1]
-r = loader.load_media(multi, 0)   # below min -> track 1
+r = loader.load_media(media_state=multi, tab_index=0)   # first tab
 assert r[1]["items"][0]["kind"] == "picture", r[1]
 assert r[2] == 3
-print("Test7 1-based track_index routing OK (1/3/99/0 -> picture/audio/audio/picture, count=3)")
+print("Test7 0-based tab_index routing OK (0/2/99 -> picture/audio/audio, count=3)")

@@ -131,7 +131,7 @@ Replaces entity names (characters, props, scenes, keyframes) with corresponding 
 
 ---
 
-### 4. MiniMaxH3MediaLoader (H3 澶氭绱犳潗鍔犺浇)
+### 4. MediaLoader (H3 澶氭绱犳潗鍔犺浇)
 
 Loads the full reference-media set for multiple MiniMax H3 video segments on a single node. Each added track (up to 64) is one segment's complete, **independent** reference bundle: pictures (up to 16), videos (鈮?) and audios (鈮?). There is **no combined total budget** 鈥?the H3 per-video limits are handled by a later node, so the panel lets you load as many pictures as you need. Per-track video trim, picture/video crop, soundtrack pairing, drag sorting, enable/disable, presets and H3 tag display are all built in. Pictures carry a category (鍏抽敭甯?/ 瑙掕壊 / 閬撳叿 / 鍦烘櫙) and a number, and are kept sorted as 鍏抽敭甯?鈫?瑙掕壊 鈫?閬撳叿 鈫?鍦烘櫙.
 
@@ -163,7 +163,7 @@ eferences (鍏ㄩ儴绱犳潗) | H3_REFS | All tracks merged into a single bundl
 - Soundtrack routing per video: paired / standalone / off / 姣忎釜瑙嗛鐨勯煶杞ㄨ矾鐢憋細閰嶅 / 鐙珛 / 鍏抽棴
 - Drag sorting, enable/disable, delete, budget monitor / 鎷栨嫿鎺掑簭銆佸紑鍏炽€佸垹闄ゃ€侀绠楃洃鎺?- H3 tag display per item (<Picture N> / <Video N> / <Audio N>) / 姣忛」鏄剧ず H3 鏍囩
 - Presets: save / load / delete per track / 棰勮锛氭瘡杞ㄧ嫭绔嬩繚瀛?鍔犺浇/鍒犻櫎
-- The splitter node (MiniMaxH3ReferenceSplitter) emits **4 category picture lists** (keyframes / characters / props / scenes), each ordered by the user-set number, instead of fixed picture_1..9 slots / 鎷嗗垎鑺傜偣锛圡iniMaxH3ReferenceSplitter锛夎緭鍑?**4 涓垎绫诲浘鐗囧垪琛?*锛堝叧閿抚 / 瑙掕壊 / 閬撳叿 / 鍦烘櫙锛夛紝姣忕被鎸夌敤鎴风紪鍙锋帓搴忥紝鍙栦唬鍘熷厛鍥哄畾鐨?picture_1..9
+- The splitter node (ReferenceSplitter) emits **4 category picture lists** (keyframes / characters / props / scenes), each ordered by the user-set number, instead of fixed picture_1..9 slots / 鎷嗗垎鑺傜偣锛圡iniMaxH3ReferenceSplitter锛夎緭鍑?**4 涓垎绫诲浘鐗囧垪琛?*锛堝叧閿抚 / 瑙掕壊 / 閬撳叿 / 鍦烘櫙锛夛紝姣忕被鎸夌敤鎴风紪鍙锋帓搴忥紝鍙栦唬鍘熷厛鍥哄畾鐨?picture_1..9
 - Output is flexible: track_references routes one segment via track_index; 
 eferences gives every track merged / 杈撳嚭鐏垫椿锛氥€屾寚瀹氱礌鏉愩€嶆寜婊戣建绱㈠紩璺敱鍗曟锛屻€屽叏閮ㄧ礌鏉愩€嶅悎骞舵墍鏈夎建
 
@@ -207,11 +207,11 @@ git clone https://gitee.com/dbmcp/ComfyUI-Openkit.git
 1. **JsonExtractor** 鈥?Feed your JSON script, select archive type, get structured outputs and the complete H3 prompt
 2. **MultiframeRef** 鈥?Connect your keyframe, image list, and background images in order
 3. **SubjectRefTagReplacement** 鈥?Pass the generated prompt through this node to standardize subject tags
-4. **MiniMaxH3MediaLoader** 鈥?Load per-segment reference media, connect `鍏ㄩ儴绱犳潗` or route `鎸囧畾绱犳潗` via `瑙嗛绱㈠紩`
+4. **MediaLoader** 鈥?Load per-segment reference media, connect `鍏ㄩ儴绱犳潗` or route `鎸囧畾绱犳潗` via `瑙嗛绱㈠紩`
 5. Connect outputs to your video generation node (e.g., MiniMax H3)
 
 1. **JsonExtractor** 鈥?杈撳叆 JSON 鍓ф湰锛岄€夋嫨妗ｆ绫诲瀷锛岃幏寰楃粨鏋勫寲杈撳嚭鍜屽畬鏁寸殑 H3 鎻愮ず璇?2. **MultiframeRef** 鈥?鎸夐『搴忚繛鎺ュ叧閿抚銆佸浘鍍忓垪琛ㄥ拰鑳屾櫙鍥?3. **SubjectRefTagReplacement** 鈥?灏嗙敓鎴愮殑鎻愮ず璇嶉€氳繃姝よ妭鐐规爣鍑嗗寲涓讳綋鏍囩
-4. **MiniMaxH3MediaLoader** 鈥?鍔犺浇鍚勬鍙傝€冪礌鏉愶紝杩炪€屽叏閮ㄧ礌鏉愩€嶆垨鎸夈€岃棰戠储寮曘€嶅彇銆屾寚瀹氱礌鏉愩€?5. 灏嗚緭鍑鸿繛鎺ュ埌瑙嗛鐢熸垚鑺傜偣锛堝 MiniMax H3锛?
+4. **MediaLoader** 鈥?鍔犺浇鍚勬鍙傝€冪礌鏉愶紝杩炪€屽叏閮ㄧ礌鏉愩€嶆垨鎸夈€岃棰戠储寮曘€嶅彇銆屾寚瀹氱礌鏉愩€?5. 灏嗚緭鍑鸿繛鎺ュ埌瑙嗛鐢熸垚鑺傜偣锛堝 MiniMax H3锛?
 ### JSON Input Format / JSON 杈撳叆鏍煎紡绀轰緥
 
 ```json
@@ -245,7 +245,7 @@ ComfyUI-Openkit/
 鈹溾攢鈹€ __init__.py              # Plugin entry / 鎻掍欢鍏ュ彛锛屾敞鍐岃妭鐐规槧灏?鈹溾攢鈹€ nodes/
 鈹?  鈹溾攢鈹€ __init__.py          # Node class & display name mappings / 鑺傜偣绫讳笌鏄剧ず鍚嶆槧灏?鈹?  鈹溾攢鈹€ json_extractor.py    # JsonExtractor implementation / JSON 鎻愬彇鑺傜偣
 鈹?  鈹溾攢鈹€ multiframe_ref.py    # MultiframeRef implementation / 澶氬抚鍙傝€冭妭鐐?鈹?  鈹溾攢鈹€ subject_ref_tag_replacement.py  # SubjectRefTagReplacement / 涓讳綋鏍囩缃崲鑺傜偣
-鈹?  鈹溾攢鈹€ media_loader.py      # MiniMaxH3MediaLoader implementation / H3 澶氭绱犳潗鍔犺浇鑺傜偣
+鈹?  鈹溾攢鈹€ media_loader.py      # MediaLoader implementation / H3 澶氭绱犳潗鍔犺浇鑺傜偣
 鈹?  鈹溾攢鈹€ media_io.py          # Image/video/audio decoding helpers / 鍥?瑙嗛/闊抽瑙ｇ爜杈呭姪
 鈹?  鈹斺攢鈹€ media_routes.py      # Upload/probe/preset HTTP routes / 涓婁紶/鎺㈡祴/棰勮鏈嶅姟璺敱
 鈹溾攢鈹€ web/

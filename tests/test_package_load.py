@@ -27,29 +27,29 @@ nodes = importlib.import_module("nodes")
 print("NODE_CLASS_MAPPINGS:", list(nodes.NODE_CLASS_MAPPINGS.keys()))
 print("NODE_DISPLAY_NAME_MAPPINGS:", nodes.NODE_DISPLAY_NAME_MAPPINGS)
 
-assert "MiniMaxH3MediaLoader" in nodes.NODE_CLASS_MAPPINGS
-assert "MiniMaxH3ReferenceSplitter" in nodes.NODE_CLASS_MAPPINGS
+assert "MediaLoader" in nodes.NODE_CLASS_MAPPINGS
+assert "ReferenceSplitter" in nodes.NODE_CLASS_MAPPINGS
 assert "JsonExtractor" in nodes.NODE_CLASS_MAPPINGS
 assert "MultiframeRef" in nodes.NODE_CLASS_MAPPINGS
 assert "SubjectRefTagReplacement" in nodes.NODE_CLASS_MAPPINGS
 
-# Loader contract (multi-track, legacy V2 API).
-loader = nodes.NODE_CLASS_MAPPINGS["MiniMaxH3MediaLoader"]
+# Loader contract (multi-tab).
+loader = nodes.NODE_CLASS_MAPPINGS["MediaLoader"]
 inputs = loader.INPUT_TYPES()
 assert "media_state" in inputs["required"]
-assert "track_index" in inputs["required"]
-assert loader.RETURN_TYPES == ("H3_REFS", "H3_REFS", "INT")
-assert loader.RETURN_NAMES == ("references", "track_references", "track_count")
+assert "tab_index" in inputs["required"]
+assert loader.RETURN_TYPES == ("MEDIA_REFS", "MEDIA_REFS", "INT")
+assert loader.RETURN_NAMES == ("全部素材", "指定素材", "段数")
 assert loader.FUNCTION == "load_media"
 assert loader.CATEGORY == "Openkit"
 assert loader.VALIDATE_INPUTS("[]") is True
 assert loader.VALIDATE_INPUTS("{ not json") != True
-print("Loader contract OK: multi-track -> references / track_references / track_count")
+print("Loader contract OK: multi-tab -> 全部素材 / 指定素材 / 段数")
 
 # Splitter contract.
-splitter = nodes.NODE_CLASS_MAPPINGS["MiniMaxH3ReferenceSplitter"]
+splitter = nodes.NODE_CLASS_MAPPINGS["ReferenceSplitter"]
 sinputs = splitter.INPUT_TYPES()
-assert sinputs["required"]["references"][0] == "H3_REFS"
+assert sinputs["required"]["references"][0] == "MEDIA_REFS"
 assert isinstance(sinputs["required"]["references"][1], dict)
 assert "tooltip" in sinputs["required"]["references"][1]
 assert splitter.RETURN_NAMES[:4] == ("关键帧", "角色", "道具", "场景")

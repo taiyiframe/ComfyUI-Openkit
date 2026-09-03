@@ -1,7 +1,8 @@
-"""HTTP routes backing the Openkit MiniMax H3 Media Loader (upload + probe).
+"""HTTP routes backing the Openkit Media Loader (upload + probe + presets).
 
 Mirrors the upstream Fantastic loader routes under the /openkit_media/ prefix.
 Uploaded files land in ComfyUI's input dir so the workflow stays portable.
+Presets are stored under input/openkit/presets/media_loader/.
 """
 
 import os
@@ -63,19 +64,16 @@ def _unique(directory, name):
 
 
 def _preset_dir():
-    base = None
-    if folder_paths is not None:
-        for getter in ("get_user_directory", "get_output_directory"):
-            fn = getattr(folder_paths, getter, None)
-            if callable(fn):
-                try:
-                    base = fn()
-                    break
-                except Exception:  # noqa: BLE001
-                    continue
-    if not base:
-        base = os.path.dirname(os.path.abspath(__file__))
-    path = os.path.join(base, "openkit_media_presets")
+    """Presets live under ComfyUI's input dir: input/openkit/presets/media_loader/.
+
+    Directory layout:
+      input/openkit/                    # plugin-wide root (auto-created)
+        presets/                        # all node presets
+          media_loader/                 # presets for the Media Loader node
+            <preset_name>.json          # one JSON file per preset
+    """
+    base = folder_paths.get_input_directory() if folder_paths else "input"
+    path = os.path.join(base, "openkit", "presets", "media_loader")
     os.makedirs(path, exist_ok=True)
     return path
 

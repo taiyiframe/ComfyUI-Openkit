@@ -1,24 +1,24 @@
-"""MiniMax H3 Media Loader / Reference Splitter for Openkit.
+"""Media Loader / Reference Splitter for Openkit.
 
-Multi-track faithful replica (legacy V2 API) of the Fantastic MiniMax H3
-Media Loader and its Reference Splitter. Every capability of the original
-node is available per track: drag-and-drop / file-picker loading, previews,
-per-video audio split routing, trim, crop, presets and budget limits.
+Multi-tab faithful replica (legacy V2 API) of the media loader and its
+Reference Splitter. Every capability of the original node is available per
+tab: drag-and-drop / file-picker loading, previews, per-video audio split
+routing, trim, crop, presets and budget limits.
 
-Each track is an independent H3 reference set. Every track is validated
-against its own per-video H3 budget (9 pictures, 3 videos, 3 audio clips;
-split soundtracks count toward the audio budget); the number of tracks is
-not bounded by a combined-total constraint. The node exposes:
-  - references        : all tracks merged into a single bundle (order kept)
-  - track_references  : the bundle of the track selected by track_index
-  - track_count       : number of tracks
+Each tab is an independent reference set. Every tab is validated against
+its own per-video budget (9 pictures, 3 videos, 3 audio clips; split
+soundtracks count toward the audio budget); the number of tabs is not
+bounded by a combined-total constraint. The node exposes:
+  - references       : all tabs merged into a single bundle (order kept)
+  - tab_references   : the bundle of the tab selected by tab_index
+  - tab_count        : number of tabs
 """
 
 import json
 
 from . import media_io
 
-# Panel capacity per media type. The H3 per-video budget (9 pictures / 3
+# Panel capacity per media type. The per-video budget (9 pictures / 3
 # audio) is enforced by a later node, not here: pictures are free up to the
 # panel's own limit, videos stay at 3, audios at 8.
 PICTURES = 32
@@ -26,9 +26,9 @@ VIDEOS = 3
 VIDEO_AUDIOS = 3
 AUDIOS = 8
 
-H3_REFS = "H3_REFS"
+MEDIA_REFS = "MEDIA_REFS"
 
-DEFAULT_TRACK_NAME = "Track 1"
+DEFAULT_TAB_NAME = "Tab 1"
 
 # Picture classification. Reference images are ordered as
 # 关键帧 1,2,3… → 角色 1,2,3… → 道具 1,2,3… → 场景 1,2,3…
@@ -53,41 +53,41 @@ def _pic_sort_key(item):
     return PIC_CAT_PRIORITY.get(_pic_category(item), 99) * 1000 + _pic_number(item)
 
 
-def _parse_tracks(media_state):
-    """Parse media_state into a list of (name, items) tracks.
+def _parse_tabs(media_state):
+    """Parse media_state into a list of (name, items) tabs.
 
     Accepted shapes:
-      - {"tracks": [{"name": "...", "items": [...]}, ...]}
-      - {"name": "...", "items": [...]}            (single named track)
+      - {"tabs": [{"name": "...", "items": [...]}, ...]}
+      - {"name": "...", "items": [...]}            (single named tab)
       - [...]                                      (legacy single raw list)
     Returns None when the payload is not valid JSON (corrupt state);
-    otherwise always a list with at least one empty track.
+    otherwise always a list with at least one empty tab.
     """
     try:
         data = json.loads(media_state or "null")
     except Exception:
         return None
 
-    if isinstance(data, dict) and isinstance(data.get("tracks"), list):
-        tracks = []
-        for i, t in enumerate(data["tracks"]):
+    if isinstance(data, dict) and isinstance(data.get("tabs"), list):
+        tabs = []
+        for i, t in enumerate(data["tabs"]):
             if not isinstance(t, dict):
                 continue
-            name = t.get("name") or f"Track {i + 1}"
+            name = t.get("name") or f"Tab {i + 1}"
             items = t.get("items") if isinstance(t.get("items"), list) else []
-            tracks.append((str(name), items))
-        if not tracks:
-            tracks = [(DEFAULT_TRACK_NAME, [])]
-        return tracks
+            tabs.append((str(name), items))
+        if not tabs:
+            tabs = [(DEFAULT_TAB_NAME, [])]
+        return tabs
 
     if isinstance(data, dict) and isinstance(data.get("items"), list):
-        name = data.get("name") or DEFAULT_TRACK_NAME
+        name = data.get("name") or DEFAULT_TAB_NAME
         return [(str(name), data["items"])]
 
     if isinstance(data, list):
-        return [(DEFAULT_TRACK_NAME, data)]
+        return [(DEFAULT_TAB_NAME, data)]
 
-    return [(DEFAULT_TRACK_NAME, [])]
+    return [(DEFAULT_TAB_NAME, [])]
 
 
 def _partition(items):
@@ -138,7 +138,7 @@ def _trim(item):
     return num(trim.get("start")), num(trim.get("end"))
 
 
-def _validate_track(items):
+def _validate_tab(items):
     if not isinstance(items, list):
         return None
     pics = sum(1 for i in items if i.get("kind") == "picture")
@@ -154,18 +154,18 @@ def _validate_track(items):
 
 
 def _validate_state(media_state):
-    tracks = _parse_tracks(media_state)
-    if tracks is None:
+    tabs = _parse_tabs(media_state)
+    if tabs is None:
         return "Media Loader state is corrupt; clear the node and re-add media."
-    for name, items in tracks:
-        err = _validate_track(items)
+    for name, items in tabs:
+        err = _validate_tab(items)
         if err:
-            return f'Track "{name}": {err}'
+            return f'Tab "{name}": {err}'
     return True
 
 
 def _build_bundle(items):
-    """Build an H3_REFS bundle from one track's items."""
+    """Build a MEDIA_REFS bundle from one tab's items."""
     pictures, videos, video_audios, audios = _partition(items)
 
     # Pictures are ordered 关键帧 → 角色 → 道具 → 场景, each group by number,
@@ -211,14 +211,14 @@ def _build_bundle(items):
     }
 
 
-class MiniMaxH3MediaLoader:
-    """Multi-track drag-and-drop / file-picker loader for H3 reference media.
+class MediaLoader:
+    """Multi-tab drag-and-drop / file-picker loader for reference media.
 
-    Each added track is a complete, independent H3 reference set (pictures,
+    Each added tab is a complete, independent reference set (pictures,
     videos, soundtracks, audios). Outputs:
-      - references       : every track merged into a single bundle
-      - track_references : the bundle of the track picked by track_index
-      - track_count      : number of tracks
+      - references       : every tab merged into a single bundle
+      - tab_references   : the bundle of the tab picked by tab_index
+      - tab_count        : number of tabs
     """
 
     @classmethod
@@ -232,20 +232,20 @@ class MiniMaxH3MediaLoader:
                         "multiline": True,
                         "display_name": "素材状态",
                         "tooltip": "多 Tab 素材状态（隐藏，由节点面板自动维护，无需手动编辑）。\n"
-                                   "每个 Tab 页对应一套完整的 H3 素材，面板会写入一条 {\"name\":\"...\",\"items\":[...]}，"
-                                   "整体为 JSON 字符串 {\"tracks\":[{...}]}。\n"
+                                   "每个 Tab 页对应一套完整的素材，面板会写入一条 {\"name\":\"...\",\"items\":[...]}，"
+                                   "整体为 JSON 字符串 {\"tabs\":[{...}]}。\n"
                                    "若状态被误改坏，节点会提示清除后重新添加素材。",
                     },
                 ),
-                "track_index": (
+                "tab_index": (
                     "INT",
                     {
                         "default": 0,
                         "min": 0,
-                        "max": 0,   # dynamic upper bound set by the panel (last track index)
+                        "max": 0,   # dynamic upper bound set by the panel (last tab index)
                         "control_after_generate": "fixed",  # never auto-increment/randomize on re-run
                         "display_name": "Tab索引",
-                        "tooltip": "指定「track_references（指定素材）」输出哪一个 Tab 页的整套素材。\n"
+                        "tooltip": "指定「tab_references（指定素材）」输出哪一个 Tab 页的整套素材。\n"
                                    "从 0 开始计数（0 = 第一个 Tab 页）。\n"
                                    "数值超过当前 Tab 总数时自动收敛到最后一个；"
                                    "新增/关闭 Tab 页后面板会自动更新输入框上限。"
@@ -259,61 +259,61 @@ class MiniMaxH3MediaLoader:
     def VALIDATE_INPUTS(cls, media_state="[]", **kwargs):
         return _validate_state(media_state)
 
-    RETURN_TYPES = (H3_REFS, H3_REFS, "INT")
+    RETURN_TYPES = (MEDIA_REFS, MEDIA_REFS, "INT")
     RETURN_NAMES = ("全部素材", "指定素材", "段数")
     OUTPUT_TOOLTIPS = (
-        "references（全部素材）：把所有 Tab 的素材合并为一个 H3 参考 bundle，"
+        "references（全部素材）：把所有 Tab 的素材合并为一个参考 bundle，"
         "按 Tab 添加顺序排列，图片/视频/视频音轨/音频分别依次编号。\n"
-        "适用于一次性把全部视频段的参考素材传给下游 H3 参考节点的场景。",
-        "track_references（指定素材）：仅输出「Tab索引」选中的那个 Tab 页的 H3 参考 bundle。"
+        "适用于一次性把全部视频段的参考素材传给下游参考节点的场景。",
+        "tab_references（指定素材）：仅输出「Tab索引」选中的那个 Tab 页的参考 bundle。"
         "索引越界自动收敛到最后一个。\n"
         "适用于按编号逐段生成视频时，只取当前这一段对应的整套素材。",
-        "track_count（段数）：当前已配置的 Tab 数量（整数）。\n"
+        "tab_count（段数）：当前已配置的 Tab 数量（整数）。\n"
         "用于下游判断总共有几个视频段，或配合循环按段分发素材。",
     )
     FUNCTION = "load_media"
     CATEGORY = "Openkit"
     DESCRIPTION = (
-        "Multi-tab MiniMax H3 reference media loader. Every tab is a "
-        "complete, independent H3 reference set (12 pictures / 3 videos / "
+        "Multi-tab reference media loader. Every tab is a "
+        "complete, independent reference set (12 pictures / 3 videos / "
         "3 audio clips, per-video budget); the tabs are not bounded by a "
         "combined total. Use 'Tab索引' to pick the set for a given video "
-        "shot and read 'track_references', or take the merged 'references'."
+        "shot and read 'tab_references', or take the merged 'references'."
     )
 
-    def load_media(self, media_state="[]", track_index=0):
+    def load_media(self, media_state="[]", tab_index=0):
         err = _validate_state(media_state)
         if err is not True:
             raise ValueError(err)
-        tracks = _parse_tracks(media_state)
-        if tracks is None:
+        tabs = _parse_tabs(media_state)
+        if tabs is None:
             raise ValueError("Media Loader state is corrupt; clear the node and re-add media.")
 
         all_items = []
-        for _name, items in tracks:
+        for _name, items in tabs:
             all_items.extend(items)
         merged = _build_bundle(all_items)
 
         idx = 0
-        if tracks:
-            # 0-based user input (0 = first track) → 0-based index, clamped
-            # to the last track so a stale too-high value stays valid.
-            idx = max(0, min(int(track_index or 0), len(tracks) - 1))
-            # Fallback (same rule as the front-end): if the selected track has
-            # no media at all but some other track does, snap to the first
-            # filled track. This keeps a stale pre-0-based saved index (e.g. 1
-            # that used to mean "first track") from producing an empty / wrong
-            # track_references output.
+        if tabs:
+            # 0-based user input (0 = first tab) → 0-based index, clamped
+            # to the last tab so a stale too-high value stays valid.
+            idx = max(0, min(int(tab_index or 0), len(tabs) - 1))
+            # Fallback (same rule as the front-end): if the selected tab has
+            # no media at all but some other tab does, snap to the first
+            # filled tab. This keeps a stale pre-0-based saved index (e.g. 1
+            # that used to mean "first tab") from producing an empty / wrong
+            # tab_references output.
             filled = next(
-                (i for i, (_n, items) in enumerate(tracks) if items), None)
-            if filled is not None and not tracks[idx][1]:
+                (i for i, (_n, items) in enumerate(tabs) if items), None)
+            if filled is not None and not tabs[idx][1]:
                 idx = filled
-        track_bundle = _build_bundle(tracks[idx][1]) if tracks else merged
+        tab_bundle = _build_bundle(tabs[idx][1]) if tabs else merged
 
-        return (merged, track_bundle, len(tracks))
+        return (merged, tab_bundle, len(tabs))
 
 
-class MiniMaxH3ReferenceSplitter:
+class ReferenceSplitter:
     """Fan a `references` bundle out into individual slots."""
 
     @classmethod
@@ -321,11 +321,11 @@ class MiniMaxH3ReferenceSplitter:
         return {
             "required": {
                 "references": (
-                    H3_REFS,
+                    MEDIA_REFS,
                     {
-                        "tooltip": "要拆分的 H3 参考 bundle，通常来自 "
-                                   "MiniMaxH3MediaLoader 的「references（全部素材）」"
-                                   "或「track_references（指定素材）」输出。\n"
+                        "tooltip": "要拆分的参考 bundle，通常来自 "
+                                   "MediaLoader 的「references（全部素材）」"
+                                   "或「tab_references（指定素材）」输出。\n"
                                    "超宽的 bundle 会被裁剪到前 N 个槽位。",
                     },
                 ),
@@ -379,10 +379,10 @@ class MiniMaxH3ReferenceSplitter:
     FUNCTION = "split"
     CATEGORY = "Openkit"
     DESCRIPTION = (
-        "Split a MiniMax H3 references bundle into the four category picture "
+        "Split a references bundle into the four category picture "
         "lists (keyframes / characters / props / scenes) plus video / "
         "video_audio / audio slots. Picture lists follow the user-set number "
-        "order; bundles wider than the H3 budget are clipped to the first N."
+        "order; bundles wider than the budget are clipped to the first N."
     )
 
     def split(self, references=None):
@@ -409,10 +409,10 @@ class MiniMaxH3ReferenceSplitter:
 
 
 NODE_CLASS_MAPPINGS = {
-    "MiniMaxH3MediaLoader": MiniMaxH3MediaLoader,
-    "MiniMaxH3ReferenceSplitter": MiniMaxH3ReferenceSplitter,
+    "MediaLoader": MediaLoader,
+    "ReferenceSplitter": ReferenceSplitter,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "MiniMaxH3MediaLoader": "H3 素材加载",
-    "MiniMaxH3ReferenceSplitter": "H3 素材拆分",
+    "MediaLoader": "素材加载",
+    "ReferenceSplitter": "素材拆分",
 }

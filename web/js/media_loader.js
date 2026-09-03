@@ -1,4 +1,4 @@
-/* MiniMax H3 Media Loader — frontend
+/* Media Loader — frontend
  * On-node panel: drag-and-drop plus a file picker, previews with playback,
  * drag-to-reorder, and per-video audio split routing.
  *
@@ -9,11 +9,11 @@
 import { app } from "../../../scripts/app.js";
 import { api } from "../../../scripts/api.js";
 
-export const LOADER_NAME = "MiniMaxH3MediaLoader";
-export const SPLITTER_NAME = "MiniMaxH3ReferenceSplitter";
+export const LOADER_NAME = "MediaLoader";
+export const SPLITTER_NAME = "ReferenceSplitter";
 export const MAX = { picture: 32, video: 3, audio: 8 };
-// H3 policy: 2-15s per reference clip, 15s total per media type.
-export const TRIM_FPS = 24;   // H3's timeline; used for frame-stepping
+// Reference policy: 2-15s per reference clip, 15s total per media type.
+export const TRIM_FPS = 24;   // timeline fps; used for frame-stepping
 export const CLIP = { min: 2, max: 15, totalPerType: 15 };
 
 // Picture classification: each reference image carries a category (one of the
@@ -132,8 +132,8 @@ const LANG_PAIRS = [
   ["where the track comes out", "音轨输出位置"],
   ["Reference Splitter not found — restart ComfyUI", "未找到 Reference Splitter — 请重启 ComfyUI"],
   ["Splitter is already connected", "Splitter 已连接"],
-  ["Splitter added — wire its slots to MiniMaxH3ReferenceToVideo", "已添加 Splitter — 将其输出接到 MiniMaxH3ReferenceToVideo"],
-  ["MiniMax H3 Media Loader", "MiniMax H3 媒体加载器"],
+  ["Splitter added — wire its slots to the downstream video node", "已添加 Splitter — 将其输出接到下游视频生成节点"],
+  ["Media Loader", "素材加载器"],
   ["Nothing loaded to save.", "没有可保存的素材。"],
   ["Give the preset a name.", "请为预设命名。"],
   ["Pick a preset first.", "请先选择预设。"],
@@ -172,8 +172,8 @@ const LANG_PAIRS = [
   ["Couldn't read that frame.", "无法读取该帧。"],
   ["Frame isn't ready yet — let the preview load, then try again.",
     "画面还没准备好 — 等预览加载后再试。"],
-  ["Kept span is under 2s. MiniMax H3 was trained on 2\u201315s reference clips; shorter ones tend to be weakly followed or ignored. Widen the range, or pad short files (like sound effects) with silence before loading.",
-    "保留区间不足 2 秒。MiniMax H3 的训练数据是 2–15 秒参考片段；更短的内容通常效果弱或不被采用。请拉宽区间，或先给短文件（如音效）补静音再加载。"],
+  ["Kept span is under 2s. Reference models are typically trained on 2\u201315s reference clips; shorter ones tend to be weakly followed or ignored. Widen the range, or pad short files (like sound effects) with silence before loading.",
+    "保留区间不足 2 秒。参考模型通常使用 2–15 秒参考片段；更短的内容通常效果弱或不被采用。请拉宽区间，或先给短文件（如音效）补静音再加载。"],
   ["← → step a frame (shift = 10) · space play · [ ] set start/end here · home/end jump",
     "← → 逐帧（shift=10 帧）· 空格播放 · [ ] 在此设置起止 · home/end 跳转"],
   ["← → step a frame (shift = 10) · space play · [ ] set start/end here · home/end jump · C capture frame",
@@ -192,7 +192,7 @@ const ZH_RULES = [
   [/^uploading (\d+)…$/, "正在上传 $1…"],
   [/^All (\d+) picture slots are full — remove one before capturing a frame\.$/, "所有 $1 个图片槽位已满 — 请先移除一个再截取帧。"],
   [/^All (\d+) (\w+) slots are full — (.+) skipped\.$/, "所有 $1 个 $2 槽位已满 — 已跳过 $3。"],
-  [/^H3 takes (\d+) audio clips in total, and split video soundtracks count too — (.+) skipped\.$/, "H3 总共支持 $1 段音频（视频拆分音轨也算）— 已跳过 $2。"],
+  [/^This loader takes (\d+) audio clips in total, and split video soundtracks count too — (.+) skipped\.$/, "本加载器总共支持 $1 段音频（视频拆分音轨也算）— 已跳过 $2。"],
   [/^(.+) loaded with its audio off — already using (\d+) audio clips\.$/, "$1 已加载但音轨关闭 — 已在用 $2 段音频。"],
   [/^Already using (\d+) audio clips — switch another off first\.$/, "已在用 $1 段音频 — 请先关闭其他音轨。"],
   [/^Saved "(.+)" \((\d+) items?\)\.$/, "已保存“$1”（$2 个素材）。"],
@@ -377,7 +377,7 @@ function fmtDur(s) {
     : `${(Math.round(s * 10) / 10).toFixed(1)}s`;
 }
 
-/** Tag numbering, mirroring comfy_extras/nodes_minimax_h3.py ordering. */
+/** Tag numbering, mirroring the reference model's node ordering. */
 /** An item counts unless it has been switched off. */
 export function isOn(item) {
   return item && item.enabled !== false;
@@ -561,35 +561,31 @@ const CSS = `
 .mml-slot.dragging{opacity:.35;}
 .mml-slot.over{outline:1px solid #6f86b8;outline-offset:1px;}
 
-.mml-dims{position:absolute;right:3px;top:3px;padding:1px 4px;border-radius:4px;
+.mml-dims{position:absolute;right:3px;top:27px;padding:1px 4px;border-radius:4px;
   background:rgba(8,10,14,.85);color:#dfe4ec;font-size:8px;line-height:1.2;
   font-family:ui-monospace,monospace;pointer-events:none;letter-spacing:0;
   text-shadow:0 1px 2px rgba(0,0,0,.9);z-index:2;}
 .mml-dims:empty{display:none;}
 .mml-lightdims{font-size:10px;color:#8a93a3;font-family:ui-monospace,monospace;}
-.mml-pic{position:absolute;inset:0;width:100%;height:100%;max-width:100%;
+.mml-pic{position:absolute;left:0;right:0;top:24px;bottom:0;width:100%;height:auto;max-width:100%;
   max-height:100%;object-fit:cover;
   display:block;cursor:zoom-in;background:#0d1015;}
 .mml-picbar{position:absolute;left:0;right:0;bottom:0;display:flex;align-items:center;
   gap:4px;padding:1px 4px;background:rgba(10,12,16,.82);min-width:0;overflow:hidden;}
-.mml-picmeta{position:absolute;left:0;right:0;bottom:24px;display:flex;gap:3px;
-  padding:2px 3px;background:transparent;z-index:3;min-width:0;align-items:center;
-  box-sizing:border-box;}
-.mml-piccat{flex:3 1 0;min-width:6.5ch;width:0;box-sizing:border-box;
-  font-family:ui-monospace,monospace;font-size:9px;background:transparent;color:#ffffff;
-  border:2px solid rgba(255,255,255,.9);border-radius:3px;padding:1px 2px;outline:none;height:18px;
+.mml-picmeta{position:absolute;left:0;right:0;top:0;display:flex;gap:3px;
+  padding:2px 3px;background:rgba(10,12,16,.88);z-index:3;min-width:0;align-items:center;
+  box-sizing:border-box;height:22px;border-bottom:1px solid rgba(255,255,255,.08);}
+.mml-piccat{flex:1 1 0;min-width:6.5ch;width:0;box-sizing:border-box;
+  font-family:ui-monospace,monospace;font-size:9px;background:rgba(255,255,255,.08);color:#ffffff;
+  border:1px solid rgba(255,255,255,.2);border-radius:3px;padding:1px 2px;outline:none;height:18px;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:1;text-align:center;
-  -webkit-appearance:none;appearance:none;
-  text-shadow:0 0 2px rgba(0,0,0,.95),0 1px 2px rgba(0,0,0,.95);}
+  -webkit-appearance:none;appearance:none;}
 .mml-piccat option{background:#1c212b;color:#ffffff;}
-.mml-picnum{flex:2 0 0;min-width:2.5ch;width:0;box-sizing:border-box;
-  font-family:ui-monospace,monospace;font-size:9px;background:transparent;color:#ffffff;
-  border:2px solid rgba(255,255,255,.9);border-radius:3px;padding:1px 0;outline:none;height:18px;
-  text-align:center;opacity:1;
-  text-shadow:0 0 2px rgba(0,0,0,.95),0 1px 2px rgba(0,0,0,.95);}
-.mml-picnum::-webkit-outer-spin-button,.mml-picnum::-webkit-inner-spin-button{
-  -webkit-appearance:none;margin:0;}
-.mml-piccat:focus,.mml-picnum:focus{border-color:#ffffff;background:rgba(0,0,0,.15);}
+.mml-picnum{flex:0 0 auto;min-width:3ch;box-sizing:border-box;
+  font-family:ui-monospace,monospace;font-size:9px;background:transparent;color:#e0a94c;
+  border:none;border-radius:3px;padding:1px 4px;outline:none;height:18px;
+  text-align:center;opacity:1;font-weight:600;}
+.mml-piccat:focus{border-color:#ffffff;background:rgba(0,0,0,.15);}
 .mml-tag{font-family:ui-monospace,monospace;font-size:9px;white-space:nowrap;}
 .mml-tag.pic{color:#e0a94c;} .mml-tag.vid{color:#4cc3e0;} .mml-tag.aud{color:#b48ce8;}
 .mml-x{cursor:pointer;color:#7a8393;font-size:11px;line-height:1;}
@@ -764,10 +760,10 @@ const CSS = `
 .mml-toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:10060;
   background:#2b3140;color:#fff;border:1px solid #4a5568;border-radius:8px;
   padding:8px 16px;font-size:13px;font-family:system-ui,sans-serif;}
-.mml-tracks{display:flex;flex-direction:column;width:100%;box-sizing:border-box;}
-.mml-tracks-head{display:flex;align-items:center;gap:4px;padding:5px 4px;flex:0 0 auto;
+.mml-tabs{display:flex;flex-direction:column;width:100%;box-sizing:border-box;}
+.mml-tabs-head{display:flex;align-items:center;gap:4px;padding:5px 4px;flex:0 0 auto;
   flex-wrap:wrap;background:#1b1f27;border:1px solid #2a2f3a;border-radius:6px;}
-.mml-tracks-body{display:flex;flex-direction:column;gap:8px;flex:1;min-height:0;
+.mml-tabs-body{display:flex;flex-direction:column;gap:8px;flex:1;min-height:0;
   overflow-y:auto;}
 .mml-topbar{display:flex;align-items:center;gap:6px;padding:4px 6px;flex:0 0 auto;
   background:#1b1f27;border:1px solid #2a2f3a;border-radius:6px;}
@@ -806,9 +802,9 @@ const CSS = `
 .mml-modal-msg{font-size:13px;line-height:1.6;color:#e3e7ee;white-space:pre-line;
   margin-bottom:16px;}
 .mml-modal-btns{display:flex;justify-content:flex-end;gap:10px;}
-.mml-track-block{border:1px solid #3a3f4b;border-radius:4px;background:#20242e;
+.mml-tab-block{border:1px solid #3a3f4b;border-radius:4px;background:#20242e;
   overflow:hidden;display:flex;flex-direction:column;flex:1 1 auto;min-height:0;}
-.mml-track-block .mml-panel{flex:1;min-height:0;height:auto;overflow:hidden;}
+.mml-tab-block .mml-panel{flex:1;min-height:0;height:auto;overflow:hidden;}
 .mml-del{background:#5a2a2a;border-color:#7f3a3a;}
 .mml-del:hover{background:#7a3a3a;}
 `;
@@ -1106,7 +1102,7 @@ class TrimModal {
     const bad = span < CLIP.min;
     this.readout.classList.toggle("bad", bad);
     this.readout.title = bad
-      ? tr(`Kept span is under ${CLIP.min}s. MiniMax H3 was trained on ` +
+      ? tr(`Kept span is under ${CLIP.min}s. Reference models are typically trained on ` +
           `${CLIP.min}\u2013${CLIP.max}s reference clips; shorter ones tend to be ` +
           "weakly followed or ignored. Widen the range, or pad short files " +
           "(like sound effects) with silence before loading.") : "";
@@ -1731,8 +1727,8 @@ async function uploadFile(file) {
 class LoaderPanel {
   constructor(node, opts = {}) {
     this.node = node;
-    this.store = opts.store || null;   // per-track data source, if any
-    this.trackId = opts.trackId || 0;
+    this.store = opts.store || null;   // per-tab data source, if any
+    this.tabId = opts.tabId || 0;
     (node._mmlPanels = node._mmlPanels || []).push(this);
     this.items = this.read();
     this.busy = 0;
@@ -1850,7 +1846,7 @@ class LoaderPanel {
     try { this.node.setDirtyCanvas?.(true, true); } catch (e) { /* Vue redraws itself */ }
     this.render();
     // A modal and the on-node panel can be open at once; keep every panel
-    // that shares this data source (same track) current.
+    // that shares this data source (same tab) current.
     (this.node._mmlPanels || []).forEach((p) => {
       if (p !== this && p.store === this.store) { p.items = p.read(); p.render(); }
     });
@@ -1889,7 +1885,7 @@ class LoaderPanel {
         continue;
       }
       if (guess === "audio" && audioCount(this.items) >= MAX.audio) {
-        this.say(`H3 takes ${MAX.audio} audio clips in total, and split video ` +
+        this.say(`This loader takes ${MAX.audio} audio clips in total, and split video ` +
           `soundtracks count too — ${file.name} skipped.`, true);
         continue;
       }
@@ -1963,27 +1959,37 @@ class LoaderPanel {
       } }, "\u2702");
   }
 
-  // Category dropdown + number input shown under every picture thumbnail.
-  // Editing either field re-sorts the whole item list by
-  // 关键帧 1.. → 角色 1.. → 道具 1.. → 场景 1..
+  // Category dropdown + read-only number shown in the title bar above every
+  // picture thumbnail. Switching category auto-assigns the next free number
+  // within that category (1-based, first gap), so the user only picks the
+  // category and never edits numbers manually.
   picMetaRow(item) {
     const cat = picCategory(item);
+    const numEl = el("span", { class: "mml-picnum",
+      title: "分类内编号（自动分配，不可编辑）" },
+      `#${picNumber(item) || "—"}`);
     const select = el("select", { class: "mml-piccat",
-      title: "分类（关键帧 / 角色 / 道具 / 场景）",
-      onchange: (e) => { item.category = e.target.value; this.resort(); } },
+      title: "分类（关键帧 / 角色 / 道具 / 场景），切换后自动编号",
+      onchange: (e) => {
+        const newCat = e.target.value;
+        item.category = newCat;
+        // Auto-assign the first unused number in the new category.
+        const used = new Set();
+        this.items.forEach((it) => {
+          if (it !== item && it.kind === "picture" &&
+              picCategory(it) === newCat) {
+            used.add(picNumber(it));
+          }
+        });
+        let n = 1;
+        while (used.has(n)) n += 1;
+        item.number = n;
+        numEl.textContent = `#${n}`;
+        this.resort();
+      } },
       PIC_CATEGORIES.map((c) =>
         el("option", { value: c, selected: c === cat }, c)));
-    // 编号输入框宽度由 CSS flex 比例控制：编号 = 下拉框宽度的 2/3。
-    const num = el("input", { type: "number", min: 1, step: 1,
-      class: "mml-picnum", title: "分类内编号，决定排序顺序",
-      value: picNumber(item),
-      onchange: (e) => {
-        const n = parseInt(e.target.value, 10);
-        item.number = Number.isFinite(n) && n > 0 ? n : 1;
-        this.resort();
-      },
-      onkeydown: (e) => e.stopPropagation() });
-    return el("div", { class: "mml-picmeta" }, select, num);
+    return el("div", { class: "mml-picmeta" }, select, numEl);
   }
 
 
@@ -2104,7 +2110,7 @@ class LoaderPanel {
             document.querySelectorAll?.(".mml-light, .mml-help, .mml-tmmodal, .mml-toast")
               .forEach((popup) => localizeDom(popup));
           } catch (err) {
-            console.error("[MiniMaxH3 Media Loader] language switch failed", err);
+            console.error("[Media Loader] language switch failed", err);
           }
         } },
         uiLang === "zh" ? "EN" : "中"),
@@ -2218,6 +2224,8 @@ class LoaderPanel {
       const tag = (tags.get(it) || "").slice(1, -1);
       picCells.push(this.reorderable(el("div",
         { class: "mml-slot filled pic" + (isOn(it) ? "" : " off") },
+        // Title bar at top: category dropdown + auto-assigned read-only number
+        this.picMetaRow(it),
         (() => {
           // Badge and img are SIBLINGS in the slot: .mml-pic is absolutely
           // positioned against the slot, so wrapping it breaks its sizing.
@@ -2243,7 +2251,6 @@ class LoaderPanel {
           }
           return [img, badge];
         })(),
-        this.picMetaRow(it),
         el("div", { class: "mml-picbar" },
           this.powerBtn(it),
           el("span", { class: "mml-tag pic" }, isOn(it) ? tag : "off"),
@@ -2447,7 +2454,7 @@ function flash(text) {
 /** Spawn a Reference Splitter and wire this loader's bundle into it.
  *  Global singleton: the whole canvas shares ONE splitter node, so if one
  *  already exists anywhere we just focus it instead of creating a duplicate.
- *  The bundle is taken from track_references (the current Tab), never the
+ *  The bundle is taken from tab_references (the current Tab), never the
  *  merged references, so the splitter sees exactly the selected Tab's set. */
 export function addSplitter(node) {
   const existing = (app.graph?._nodes || []).find((n) => n.type === SPLITTER_NAME);
@@ -2468,10 +2475,10 @@ export function addSplitter(node) {
   try {
     sp.pos = [node.pos[0] + ((node.size?.[0] || NODE_W) + 60), node.pos[1]];
   } catch (e) { /* let the renderer place it */ }
-  // 接入当前 Tab 的指定素材（track_references），保证展开即正确拆分当前页素材
+  // 接入当前 Tab 的指定素材（tab_references），保证展开即正确拆分当前页素材
   node.connect(1, sp, 0);
   try { app.graph.setDirtyCanvas(true, true); } catch (e) { /* Vue redraws */ }
-  flash("已展开拆分节点，请将其输出接到下游 H3 节点");
+  flash("已展开拆分节点，请将其输出接到下游视频生成节点");
   return sp;
 }
 
@@ -2489,7 +2496,7 @@ export function openLoaderModal(node, targetPanel) {
   const overlay = el("div", { class: "mml-overlay",
     onmousedown: (e) => { if (e.target === overlay) close(); } },
     el("div", { class: "mml-modal" },
-      el("div", { class: "mml-modalhead" }, "MiniMax H3 Media Loader",
+      el("div", { class: "mml-modalhead" }, "Media Loader",
         el("button", { title: "Close", onclick: close }, "\u2715")),
       el("div", { class: "mml-modalbody" }, panel.root)));
   window.addEventListener("keydown", esc);
@@ -2497,28 +2504,28 @@ export function openLoaderModal(node, targetPanel) {
   return panel;
 }
 
-/* -------------------------------------------------------- multi-track */
+/* -------------------------------------------------------- multi-tab */
 
-const MAX_TRACKS = 32;
-const TRACK_H = 30;
-// Full expanded height of one track's loader panel: tall enough that every
+const MAX_TABS = 32;
+const TAB_H = 30;
+// Full expanded height of one tab's loader panel: tall enough that every
 // section (pictures 4×8, videos 1-3, audios 1-8, tag order) is visible with
-// no clipping. The canvas height strictly follows the sum over tracks.
-const TRACK_PANEL_H = 880;
+// no clipping. The canvas height strictly follows the sum over tabs.
+const TAB_PANEL_H = 880;
 
-class MultiTrackManager {
+class MultiTabManager {
   constructor(node) {
     this.node = node;
-    this.tracks = [];   // { name, items, panel } — 每个 tab 一套完整 H3 素材
+    this.tabs = [];   // { name, items, panel } — 每个 tab 一套完整素材
     this._curTab = 0;
-    this.root = el("div", { class: "mml-tracks" });
+    this.root = el("div", { class: "mml-tabs" });
     this.topbar = this.buildTopbar();
-    this.head = el("div", { class: "mml-tracks-head" });
-    this.body = el("div", { class: "mml-tracks-body" });
+    this.head = el("div", { class: "mml-tabs-head" });
+    this.body = el("div", { class: "mml-tabs-body" });
     this.root.append(this.topbar, this.head, this.body);
     this._load();
     this._ensurePanels();
-    if (!this.tracks.length) this.addTrack();
+    if (!this.tabs.length) this.addTab();
     this.renderBody();
   }
 
@@ -2526,11 +2533,11 @@ class MultiTrackManager {
   buildTopbar() {
     const input = el("input", { type: "number", min: 0, step: 1, value: "0",
       class: "mml-topidx",
-      title: "Tab索引：从 0 开始，决定「track_references（指定素材）」输出哪个 Tab 页的素材" });
+      title: "Tab索引：从 0 开始，决定「tab_references（指定素材）」输出哪个 Tab 页的素材" });
     input.addEventListener("change", () => {
       let v = parseInt(input.value, 10);
       if (isNaN(v)) v = 0;
-      const maxV = Math.max(0, this.tracks.length - 1);
+      const maxV = Math.max(0, this.tabs.length - 1);
       v = Math.max(0, Math.min(maxV, v));
       input.value = String(v);
       this.syncTopbar();
@@ -2540,15 +2547,15 @@ class MultiTrackManager {
       title: "修改 Tab 索引后点击，下方 Tab 页自动切换到对应索引，并联动切换输出",
       onclick: () => this.linkSwitch() }, "联动切换");
     const expandBtn = el("button", { class: "mml-topbtn",
-      title: "展开一个全局共用的 H3 素材拆分节点；已存在展开节点时不会重复生成，会自动定位到已有的那个",
+      title: "展开一个全局共用的素材拆分节点；已存在展开节点时不会重复生成，会自动定位到已有的那个",
       onclick: () => addSplitter(this.node) }, "展开输出拆分器");
     return el("div", { class: "mml-topbar" },
       el("span", { class: "mml-toplabel" }, "Tab索引"), input, linkBtn, expandBtn);
   }
 
-  /** 把顶部输入框的值写回隐藏的 track_index widget（供后端读取）。 */
+  /** 把顶部输入框的值写回隐藏的 tab_index widget（供后端读取）。 */
   syncTopbar() {
-    const w = this.node.widgets?.find((x) => x.name === "track_index");
+    const w = this.node.widgets?.find((x) => x.name === "tab_index");
     if (w) w.value = parseInt(this._topInput?.value, 10) || 0;
   }
 
@@ -2564,11 +2571,11 @@ class MultiTrackManager {
     } catch (e) { data = null; }
     let arr = null;
     if (Array.isArray(data)) arr = data;
-    else if (data && Array.isArray(data.tracks)) arr = data.tracks;
+    else if (data && Array.isArray(data.tabs)) arr = data.tabs;
     else if (data && Array.isArray(data.items))
       arr = [{ name: data.name || "Track 1", items: data.items }];
     if (arr) arr.forEach((t, i) => {
-      this.tracks.push({
+      this.tabs.push({
         name: (t && t.name) || `Tab ${i}`,
         items: Array.isArray(t && t.items) ? t.items : [],
         panel: null,
@@ -2577,37 +2584,37 @@ class MultiTrackManager {
   }
 
   _ensurePanels() {
-    // Every track must hold its own complete LoaderPanel. Tracks restored
+    // Every tab must hold its own complete LoaderPanel. Tabs restored
     // from a saved workflow arrive with panel:null (the panel is never
     // serialized) — build one for each so the full loader always renders.
-    this.tracks.forEach((t, i) => {
+    this.tabs.forEach((t, i) => {
       if (!t.panel) t.panel = new LoaderPanel(this.node, {
-        store: this.makeStore(t), trackId: i });
+        store: this.makeStore(t), tabId: i });
     });
   }
 
-  makeStore(track) {
+  makeStore(tab) {
     return {
-      read: () => track.items,
-      write: (items) => { track.items = items; this.serialize(); },
+      read: () => tab.items,
+      write: (items) => { tab.items = items; this.serialize(); },
     };
   }
 
-  addTrack() {
-    if (this.tracks.length >= MAX_TRACKS) return;
-    const track = { name: `Tab ${this.tracks.length}`, items: [], panel: null };
-    this.tracks.push(track);
-    track.panel = new LoaderPanel(this.node, {
-      store: this.makeStore(track), trackId: this.tracks.length - 1 });
-    this.setCurTab(this.tracks.length - 1);   // 新增后自动切到新 Tab
+  addTab() {
+    if (this.tabs.length >= MAX_TABS) return;
+    const tab = { name: `Tab ${this.tabs.length}`, items: [], panel: null };
+    this.tabs.push(tab);
+    tab.panel = new LoaderPanel(this.node, {
+      store: this.makeStore(tab), tabId: this.tabs.length - 1 });
+    this.setCurTab(this.tabs.length - 1);   // 新增后自动切到新 Tab
     this.serialize();
     this.resize();
   }
 
   /** 关闭一个 Tab（会先弹确认）：内容会丢失。始终至少保留 1 个 Tab。 */
   closeTab(i) {
-    if (this.tracks.length <= 1) return;
-    const t = this.tracks[i];
+    if (this.tabs.length <= 1) return;
+    const t = this.tabs[i];
     if (!t) return;
     const name = (t.name || "").trim() || `Tab ${i}`;
     this.confirm(
@@ -2618,9 +2625,9 @@ class MultiTrackManager {
             .filter((p) => p !== t.panel);
           t.panel.root.remove();
         }
-        this.tracks.splice(i, 1);
+        this.tabs.splice(i, 1);
         let cur = this._curTab;
-        if (cur >= this.tracks.length) cur = this.tracks.length - 1;
+        if (cur >= this.tabs.length) cur = this.tabs.length - 1;
         if (cur < 0) cur = 0;
         this.setCurTab(cur);
         this.serialize();
@@ -2628,11 +2635,11 @@ class MultiTrackManager {
       });
   }
 
-  clearTrack(i) {
-    const t = this.tracks[i];
+  clearTab(i) {
+    const t = this.tabs[i];
     if (!t || !t.panel) return;
     // Clear through the panel's own store so the write propagates to this
-    // tab only; mutating track.items directly would leave the panel's
+    // tab only; mutating tab.items directly would leave the panel's
     // snapshot pointing at the old array and commit() would write it back.
     t.panel.items = [];
     t.panel.commit();
@@ -2640,15 +2647,15 @@ class MultiTrackManager {
 
   /** 点击 Tab 页签：切到该 Tab，并联动更新顶部 Tab索引 输入框（输出跟随）。 */
   setCurTab(i) {
-    if (i < 0 || i >= this.tracks.length) return;
+    if (i < 0 || i >= this.tabs.length) return;
     this._curTab = i;
-    const w = this.node.widgets?.find((x) => x.name === "track_index");
+    const w = this.node.widgets?.find((x) => x.name === "tab_index");
     if (w) {
-      if (w.options) w.options.max = Math.max(0, this.tracks.length - 1);
+      if (w.options) w.options.max = Math.max(0, this.tabs.length - 1);
       w.value = i;
     }
     if (this._topInput) {
-      this._topInput.max = String(Math.max(0, this.tracks.length - 1));
+      this._topInput.max = String(Math.max(0, this.tabs.length - 1));
       this._topInput.value = String(i);
     }
     this.renderBody();
@@ -2656,7 +2663,7 @@ class MultiTrackManager {
 
   /** 双击 Tab 标签：就地编辑标题。 */
   renameTab(i) {
-    const t = this.tracks[i];
+    const t = this.tabs[i];
     if (!t) return;
     const tabEl = this.head?.children?.[i];
     if (!tabEl) return;
@@ -2707,27 +2714,27 @@ class MultiTrackManager {
     const tmp = w.callback;
     w.callback = null;
     w.value = JSON.stringify({
-      tracks: this.tracks.map((t) => ({ name: t.name, items: t.items })),
+      tabs: this.tabs.map((t) => ({ name: t.name, items: t.items })),
     });
     w.callback = tmp;
     try { this.node.graph?.setDirtyCanvas?.(true, true); } catch (e) { /* Vue redraws */ }
   }
 
   reload() {
-    this.tracks.forEach((t) => {
+    this.tabs.forEach((t) => {
       if (t.panel)
         this.node._mmlPanels = (this.node._mmlPanels || [])
           .filter((p) => p !== t.panel);
     });
-    this.tracks = [];
+    this.tabs = [];
     this.body.innerHTML = "";
     this._load();
     this._ensurePanels();
-    if (!this.tracks.length) this.addTrack();
+    if (!this.tabs.length) this.addTab();
     else this.renderBody();
     this.serialize();
     this.resize();
-    this.syncTrackIndex();
+    this.syncTabIndex();
   }
 
   _txt(zh, en) { return uiLang === "zh" ? zh : en; }
@@ -2736,7 +2743,7 @@ class MultiTrackManager {
     this.body.innerHTML = "";
     this.head.innerHTML = "";
     // Tab 栏：每个 Tab 一个页签（点击切换、双击改名、× 关闭），末尾「+」新增。
-    this.tracks.forEach((t, i) => {
+    this.tabs.forEach((t, i) => {
       const cnt = t.panel ? fileCount(t.items) : 0;
       const tab = el("div", {
         class: "mml-tab" + (i === this._curTab ? " active" : ""),
@@ -2765,14 +2772,14 @@ class MultiTrackManager {
     });
     // 「+」新增 Tab
     const addBtn = el("button", { class: "mml-tab mml-add",
-      title: "新增一个 Tab（每页一套完整的 H3 素材）", onclick: () => this.addTrack() }, "+");
+      title: "新增一个 Tab（每页一套完整的素材）", onclick: () => this.addTab() }, "+");
     this.head.append(addBtn);
     this.head.append(el("span", { class: "mml-count" },
-      `${this.tracks.length} / ${MAX_TRACKS}`));
+      `${this.tabs.length} / ${MAX_TABS}`));
     // 只展示当前 Tab 的素材面板
-    const cur = this.tracks[this._curTab];
+    const cur = this.tabs[this._curTab];
     if (cur) {
-      const block = el("div", { class: "mml-track-block" }, );
+      const block = el("div", { class: "mml-tab-block" }, );
       if (cur.panel) block.append(cur.panel.root);
       this.body.append(block);
     }
@@ -2782,20 +2789,20 @@ class MultiTrackManager {
   height() {
     // Tab 模式下画布高度 = 顶部栏 + Tab 栏 + 单个素材面板高度。
     // 素材面板由 LoaderPanel 完整渲染，用户仍可拖动右下角自由缩放（只增不减）。
-    let h = 40 + 34 + TRACK_H + TRACK_PANEL_H;
+    let h = 40 + 34 + TAB_H + TAB_PANEL_H;
     return h + 8;
   }
 
-  minHeight() { return 40 + 34 + TRACK_H + TRACK_PANEL_H + 8; }
+  minHeight() { return 40 + 34 + TAB_H + TAB_PANEL_H + 8; }
 
   resize() {
     // Two-way auto-fit that never fights the user's free bottom-right drag:
-    //  - content grew (track added)  -> grow the canvas to fit;
+    //  - content grew (tab added)  -> grow the canvas to fit;
     //  - canvas is still glued to the previous content height and the
-    //    content shrank (track removed/collapsed) -> shrink back;
+    //    content shrank (tab removed/collapsed) -> shrink back;
     //  - a height the user dragged to is never overwritten.
     // node.size[1] is the content height plus the ~34px node header, so
-    // track "last fitted canvas height" in the same space.
+    // tab "last fitted canvas height" in the same space.
     const w = Math.max(NODE_W, this.node.size?.[0] || 0);
     const target = this.height() + 34;
     const cur = this.node.size?.[1] || 0;
@@ -2807,11 +2814,11 @@ class MultiTrackManager {
     this._lastContentH = target;
   }
 
-  syncTrackIndex() {
+  syncTabIndex() {
     // Tab索引 is 0-based, min 0, max = last tab index (tab count - 1).
     // Kept in sync with every add/remove/reload; also mirrors the top DOM bar.
-    const w = this.node.widgets?.find((x) => x.name === "track_index");
-    const maxV = Math.max(0, this.tracks.length - 1);
+    const w = this.node.widgets?.find((x) => x.name === "tab_index");
+    const maxV = Math.max(0, this.tabs.length - 1);
     let v = w ? parseInt(w.value ?? 0, 10) : NaN;
     if (isNaN(v) || v < 0) v = 0;
     else if (v > maxV) v = maxV;
@@ -2819,8 +2826,8 @@ class MultiTrackManager {
     // 有素材的 Tab（兼容旧工作流里保存的旧值指向空 Tab 的情况）。用户
     // 主动选中的有素材 Tab 不会被回退。
     let filled = -1;
-    this.tracks.forEach((t, i) => { if (filled < 0 && (t.items?.length || 0) > 0) filled = i; });
-    const curEmpty = (this.tracks[v]?.items?.length || 0) === 0;
+    this.tabs.forEach((t, i) => { if (filled < 0 && (t.items?.length || 0) > 0) filled = i; });
+    const curEmpty = (this.tabs[v]?.items?.length || 0) === 0;
     if (curEmpty && filled >= 0 && filled !== v) v = filled;
     if (w) {
       if (w.options) { w.options.min = 0; w.options.max = maxV; }
@@ -2838,7 +2845,7 @@ class MultiTrackManager {
 
   /** 联动切换：按顶部「Tab索引」的值，切到对应 Tab 页并联动输出。 */
   linkSwitch() {
-    const n = this.tracks.length;
+    const n = this.tabs.length;
     let v = parseInt(this._topInput?.value, 10);
     if (isNaN(v)) v = 0;
     v = Math.max(0, Math.min(n - 1, v));
@@ -2857,16 +2864,16 @@ const VIDEO_AUDIOS = 3;
 const AUDIOS = 8;
 
 const TOOLTIP_IN = {
-  media_state: "多 Tab 素材状态（隐藏，由节点面板自动维护，无需手动编辑）。\n每个 Tab 页对应一套完整的 H3 素材，面板写入一条 {\"name\":\"...\",\"items\":[...]}，整体为 JSON 字符串 {\"tracks\":[{...}]}。\n若状态被误改坏，节点会提示清除后重新添加素材。",
-  track_index: "指定「track_references（指定素材）」输出哪个 Tab 页的整套素材。\n从 0 开始计数（0 = 第一个 Tab）。\n数值超过当前 Tab 总数时自动收敛到最后一个；新增/关闭 Tab 后面板会自动更新输入框上限。\n修改数值后点击其右侧的「联动切换」按钮，可把输出切换到对应编号 Tab 并展示该页素材。",
-  references: "要拆分的 H3 参考 bundle，通常来自 MiniMaxH3MediaLoader 的「references（全部素材）」或「track_references（指定素材）」输出。\n超宽的 bundle 会被裁剪到前 N 个槽位。",
+  media_state: "多 Tab 素材状态（隐藏，由节点面板自动维护，无需手动编辑）。\n每个 Tab 页对应一套完整的素材，面板写入一条 {\"name\":\"...\",\"items\":[...]}，整体为 JSON 字符串 {\"tabs\":[{...}]}。\n若状态被误改坏，节点会提示清除后重新添加素材。",
+  tab_index: "指定「tab_references（指定素材）」输出哪个 Tab 页的整套素材。\n从 0 开始计数（0 = 第一个 Tab）。\n数值超过当前 Tab 总数时自动收敛到最后一个；新增/关闭 Tab 后面板会自动更新输入框上限。\n修改数值后点击其右侧的「联动切换」按钮，可把输出切换到对应编号 Tab 并展示该页素材。",
+  references: "要拆分的参考 bundle，通常来自 MediaLoader 的「references（全部素材）」或「tab_references（指定素材）」输出。\n超宽的 bundle 会被裁剪到前 N 个槽位。",
 };
 // 按端口索引映射（0/1/2）而非端口名：后端 RETURN_NAMES 改为中文后，
 // 端口显示名会变为「全部素材 / 指定素材 / 段数」，用索引映射在改名前后都稳定。
 const TOOLTIP_OUT_LOADER = {
-  0: "全部素材（references）：把所有 Tab 的素材合并为一个 H3 参考 bundle，按 Tab 添加顺序排列，图片/视频/视频音轨/音频分别依次编号。\n适用于一次性把全部视频段的参考素材传给下游 H3 参考节点的场景。",
-  1: "指定素材（track_references）：仅输出「Tab索引」选中的那个 Tab 页的 H3 参考 bundle。索引越界自动收敛到最后一个。\n适用于按编号逐段生成视频时，只取当前这一段对应的整套素材。",
-  2: "段数（track_count）：当前已配置的 Tab 数量（整数）。\n用于下游判断总共有几个视频段，或配合循环按段分发素材。",
+  0: "全部素材（references）：把所有 Tab 的素材合并为一个参考 bundle，按 Tab 添加顺序排列，图片/视频/视频音轨/音频分别依次编号。\n适用于一次性把全部视频段的参考素材传给下游参考节点的场景。",
+  1: "指定素材（tab_references）：仅输出「Tab索引」选中的那个 Tab 页的参考 bundle。索引越界自动收敛到最后一个。\n适用于按编号逐段生成视频时，只取当前这一段对应的整套素材。",
+  2: "段数（tab_count）：当前已配置的 Tab 数量（整数）。\n用于下游判断总共有几个视频段，或配合循环按段分发素材。",
 };
 const TOOLTIP_OUT_SPLITTER = {};
 for (const cat of ["关键帧", "角色", "道具", "场景"])
@@ -2900,16 +2907,16 @@ function applyTooltips(node, inTips, outTips) {
 }
 
 /**
- * 彻底禁用 track_index 的自动值控件（increment/randomize）。
+ * 彻底禁用 tab_index 的自动值控件（increment/randomize）。
  * ComfyUI 前端会在 spec 未声明 control_after_generate 时，为 number/combo
  * widget 自动挂一个「值控件」（linkedWidgets[0]），它每次运行后会自动把
- * track_index +1 或随机化——这正是"第一次输出秦、第二次输出汉"的根源。
+ * tab_index +1 或随机化——这正是"第一次输出秦、第二次输出汉"的根源。
  * 后端 spec 的 control_after_generate:"fixed" 已阻止新节点创建它；这里再
  * 兜底处理旧工作流里残留的值控件：置为 fixed、隐藏并从 widgets 中移除，
  * 保证滑轨索引只由顶部输入框 / 联动切换决定，运行前后保持不变。
  */
-function killTrackIndexValueControl(node) {
-  const w = node.widgets?.find((x) => x.name === "track_index");
+function killTabIndexValueControl(node) {
+  const w = node.widgets?.find((x) => x.name === "tab_index");
   if (!w) return;
   if (Array.isArray(w.linkedWidgets)) {
     for (const lw of [...w.linkedWidgets]) {
@@ -2967,19 +2974,19 @@ app.registerExtension({
         () => addSplitter(this));
       if (splitterBtn) splitterBtn._mmxBase = "展开输出拆分器";
       const linkSwitchBtn = this.addWidget("button", "联动切换", null,
-        () => this._mmlTracksManager?.linkSwitch());
+        () => this._mmlTabsManager?.linkSwitch());
       if (linkSwitchBtn) linkSwitchBtn.title =
         "修改 Tab 索引后点击，下方 Tab 页自动切换到对应索引，并联动切换输出";
       // 原生控件（Tab索引 / 联动切换 / 展开拆分）的外观由顶部自定义 DOM 栏
       // 接管（与多Tab字符串节点顶部样式一致）；这里隐藏原生 widget，功能与
       // 序列化仍由它们承担。
-      const idxW = this.widgets?.find((x) => x.name === "track_index");
+      const idxW = this.widgets?.find((x) => x.name === "tab_index");
       [idxW, splitterBtn, linkSwitchBtn].forEach((x) => {
         if (x) { x.hidden = true; x.type = "hidden"; x.computeSize = () => [0, -4]; }
       });
 
-      this._mmlTracksManager = new MultiTrackManager(this);
-      const widget = this.addDOMWidget("mml_panel", "div", this._mmlTracksManager.root, {
+      this._mmlTabsManager = new MultiTabManager(this);
+      const widget = this.addDOMWidget("mml_panel", "div", this._mmlTabsManager.root, {
         getMinHeight: () => 200,
         getMaxHeight: () => undefined,
         // Follow the node's own height so dragging the bottom-right handle
@@ -2989,9 +2996,9 @@ app.registerExtension({
         serialize: false,
       });
       widget.computeLayoutSize = () => {
-        const mgr = this._mmlTracksManager;
+        const mgr = this._mmlTabsManager;
         const prefW = Math.max(NODE_W, this.size?.[0] || NODE_W);
-        const prefH = Math.max(300, (mgr ? mgr.height() : TRACK_PANEL_H) + 34);
+        const prefH = Math.max(300, (mgr ? mgr.height() : TAB_PANEL_H) + 34);
         return {
           minHeight: 300,
           minWidth: NODE_W,   // 900：与 onResize 一致，避免画布布局把素材面板挤窄
@@ -3009,21 +3016,21 @@ app.registerExtension({
         get: () => Math.max(NODE_W, this.size?.[0] || NODE_W),
         set: () => {},
       });
-      // queue 前把顶部输入框的最新值写回隐藏的 track_index widget，
+      // queue 前把顶部输入框的最新值写回隐藏的 tab_index widget，
       // 保证输出始终与用户看到的「滑轨索引」一致（含未触发 change 的情况）。
       widget.beforeQueued = () => {
-        const mgr = this._mmlTracksManager;
+        const mgr = this._mmlTabsManager;
         if (mgr?.syncTopbar) mgr.syncTopbar();
-        if (mgr?.syncTrackIndex) mgr.syncTrackIndex();
+        if (mgr?.syncTabIndex) mgr.syncTabIndex();
       };
       this.size[0] = Math.max(NODE_W, this.size[0] || 0);
-      this.size[1] = Math.max(this._mmlTracksManager.height() + 34, this.size[1] || 0);
-      this._mmlTracksManager.syncTrackIndex();
+      this.size[1] = Math.max(this._mmlTabsManager.height() + 34, this.size[1] || 0);
+      this._mmlTabsManager.syncTabIndex();
       // 彻底禁用残留的自动值控件（increment/randomize），杜绝"每次运行索引 +1"
-      killTrackIndexValueControl(this);
-      // queue 后把 track_index 恢复为顶部输入框的值，对冲任何残留值控件副作用
+      killTabIndexValueControl(this);
+      // queue 后把 tab_index 恢复为顶部输入框的值，对冲任何残留值控件副作用
       this.onAfterQueued = () => {
-        const mgr = this._mmlTracksManager;
+        const mgr = this._mmlTabsManager;
         if (mgr?.syncTopbar) mgr.syncTopbar();
       };
       // 宽度守卫：Vue 布局/拖动会直接改 node.size 而不触发 onResize，
@@ -3053,7 +3060,7 @@ app.registerExtension({
           // 高度跟随素材面板内容（最少为完整显示）。
           const min = this.computeSize();
           size[0] = Math.max(NODE_W, size[0]);
-          const mgr = this._mmlTracksManager;
+          const mgr = this._mmlTabsManager;
           const base = mgr ? mgr.height() + 34 : PANEL_H + 34;
           size[1] = Math.max(min[1], base, size[1]);
         }
@@ -3068,18 +3075,18 @@ app.registerExtension({
       const r = onConfigure?.apply(this, arguments);
       setTimeout(() => {
         if (!isLoader) return r;   // 拆分节点不做任何尺寸/索引强制，恢复原生自由缩放
-        if (this._mmlTracksManager) {
-          this._mmlTracksManager.reload();
-          this._mmlTracksManager.syncTrackIndex();
+        if (this._mmlTabsManager) {
+          this._mmlTabsManager.reload();
+          this._mmlTabsManager.syncTabIndex();
         }
         // 强制「Tab索引」固定：彻底禁用旧工作流里残留的自动值控件
         // （increment/randomize，会导致每次运行索引自动 +1 / 随机，
         // 表现为"第一次输出秦、第二次输出汉"），使输出始终严格跟随
         // 顶部输入框/联动切换选中的 Tab。
-        killTrackIndexValueControl(this);
+        killTabIndexValueControl(this);
         this.size[0] = Math.max(NODE_W, this.size[0] || 0);
         this.size[1] = Math.max(
-          (this._mmlTracksManager ? this._mmlTracksManager.height() : TRACK_PANEL_H) + 34,
+          (this._mmlTabsManager ? this._mmlTabsManager.height() : TAB_PANEL_H) + 34,
           this.size[1] || 0);
       }, 0);
       return r;
