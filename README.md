@@ -299,6 +299,21 @@ Optional backend wheels (e.g. PyAV) are shipped under `pkg/wheels/` and, if miss
 
 ---
 
+## Acknowledgments / 特别鸣谢
+
+<span style="color:#FFD700;">
+
+- **https://github.com/yuan-SiO2/ComfyUI-Yuan-Tool.git**
+- **https://github.com/oufeixinxinren/ComfyUI-MiniMax-ContextIR.git**
+
+特别鸣谢上述插件的作者，Openkit 开放插件部分节点是在各位大佬优秀设计的基础之上进行再次创作，欢迎大家尽情享用。
+
+Special thanks to the authors of the above plugins. Some nodes of the Openkit plugin are recreated based on the excellent designs of these great developers. Everyone is welcome to enjoy.
+
+</span>
+
+---
+
 ## License / 璁稿彲璇?
 鏈」鐩噰鐢?**鏈ㄥ叞瀹芥澗璁稿彲璇佺2鐗堬紙Mulan Permissive Software License, Version 2, MulanPSL-2.0锛?*銆?
 This project is licensed under the **Mulan Permissive Software License, Version 2 (MulanPSL-2.0)**.
