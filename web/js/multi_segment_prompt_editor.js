@@ -403,17 +403,30 @@ app.registerExtension({
           return { ok: false, error: "根节点必须是对象" };
         }
 
-        // 2. 分镜序列编号检查（编号重复或顺序不对等同格式错误，阻止切换）
+        // 2. 分镜序列检查（编号重复/顺序/类型秒数范围，问题等同格式错误）
         const shots = data["分镜序列"];
         if (Array.isArray(shots) && shots.length > 0) {
           const nums = [];
           const problems = [];
           shots.forEach((s, i) => {
+            // 编号检查
             const n = s ? parseInt(s["编号"], 10) : NaN;
             if (Number.isNaN(n)) {
               problems.push("第 " + (i + 1) + " 个分镜缺少有效编号");
             } else {
               nums.push({ idx: i, num: n });
+            }
+            // 类型字段秒数范围检查（5-12秒，与下拉框一致）
+            if (s && typeof s["类型"] === "string") {
+              const parsed = parseShotType(s["类型"]);
+              if (parsed.category !== "文戏" && parsed.category !== "武戏") {
+                problems.push("第 " + (i + 1) + " 个分镜类型格式错误（应为「文戏：N秒」或「武戏：N秒」）");
+              } else if (parsed.duration < 5 || parsed.duration > 12) {
+                problems.push("第 " + (i + 1) + " 个分镜秒数 " + parsed.duration +
+                  " 超出范围（必须为 5-12 秒）");
+              }
+            } else if (s) {
+              problems.push("第 " + (i + 1) + " 个分镜缺少类型字段");
             }
           });
 
@@ -439,7 +452,7 @@ app.registerExtension({
           }
 
           if (problems.length > 0) {
-            return { ok: false, error: "分镜编号问题：" + problems.join("；") + "。请修正后再切换。" };
+            return { ok: false, error: "分镜校验未通过：" + problems.join("；") + "。请修正后再切换。" };
           }
         }
 
