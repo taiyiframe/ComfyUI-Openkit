@@ -48,6 +48,24 @@ export function nextPicNumber(items, category) {
   return hi + 1;
 }
 
+/** Reassign compact 1..n numbers inside each category, in the current
+ *  item-list order. Called after drag-to-reorder so slot positions and the
+ *  read-only numbers stay logically consistent when pictures are swapped
+ *  between slots. Only touches pictures; video/audio are unaffected. */
+export function renumberPictures(items) {
+  const buckets = new Map();
+  (items || []).forEach((i) => {
+    if (i && i.kind === "picture") {
+      const cat = picCategory(i);
+      if (!buckets.has(cat)) buckets.set(cat, []);
+      buckets.get(cat).push(i);
+    }
+  });
+  buckets.forEach((list) => {
+    list.forEach((it, idx) => { it.number = idx + 1; });
+  });
+}
+
 /** Order the item list so pictures come first (sorted by category+number),
  *  then videos, then audios; each group keeps its previous relative order. */
 export function reorderForDisplay(items) {
@@ -2028,7 +2046,12 @@ class LoaderPanel {
     const tmp = this.items[from];
     this.items[from] = this.items[to];
     this.items[to] = tmp;
-    this.commit();
+    // After a drag-to-reorder, renumber each picture category so slot
+    // positions and their read-only numbers stay consistent, then re-sort
+    // (pictures stay grouped 关键帧→角色→道具→场景 by the new numbers;
+    // video/audio keep their relative order). Pictures only get renumbered.
+    renumberPictures(this.items);
+    this.resort();
   }
 
   reorderable(node, item) {
