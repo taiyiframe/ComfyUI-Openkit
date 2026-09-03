@@ -2866,14 +2866,13 @@ const AUDIOS = 8;
 const TOOLTIP_IN = {
   media_state: "多 Tab 素材状态（隐藏，由节点面板自动维护，无需手动编辑）。\n每个 Tab 页对应一套完整的素材，面板写入一条 {\"name\":\"...\",\"items\":[...]}，整体为 JSON 字符串 {\"tabs\":[{...}]}。\n若状态被误改坏，节点会提示清除后重新添加素材。",
   tab_index: "指定「tab_references（指定素材）」输出哪个 Tab 页的整套素材。\n从 0 开始计数（0 = 第一个 Tab）。\n数值超过当前 Tab 总数时自动收敛到最后一个；新增/关闭 Tab 后面板会自动更新输入框上限。\n修改数值后点击其右侧的「联动切换」按钮，可把输出切换到对应编号 Tab 并展示该页素材。",
-  references: "要拆分的参考 bundle，通常来自 MediaLoader 的「references（全部素材）」或「tab_references（指定素材）」输出。\n超宽的 bundle 会被裁剪到前 N 个槽位。",
+  references: "要拆分的参考 bundle，通常来自 MediaLoader 的「指定素材」输出。\n超宽的 bundle 会被裁剪到前 N 个槽位。",
 };
-// 按端口索引映射（0/1/2）而非端口名：后端 RETURN_NAMES 改为中文后，
-// 端口显示名会变为「全部素材 / 指定素材 / 段数」，用索引映射在改名前后都稳定。
+// 按端口索引映射（0/1）而非端口名：后端 RETURN_NAMES 改为中文后，
+// 端口显示名会变为「指定素材 / Tab索引」，用索引映射在改名前后都稳定。
 const TOOLTIP_OUT_LOADER = {
-  0: "全部素材（references）：把所有 Tab 的素材合并为一个参考 bundle，按 Tab 添加顺序排列，图片/视频/视频音轨/音频分别依次编号。\n适用于一次性把全部视频段的参考素材传给下游参考节点的场景。",
-  1: "指定素材（tab_references）：仅输出「Tab索引」选中的那个 Tab 页的参考 bundle。索引越界自动收敛到最后一个。\n适用于按编号逐段生成视频时，只取当前这一段对应的整套素材。",
-  2: "段数（tab_count）：当前已配置的 Tab 数量（整数）。\n用于下游判断总共有几个视频段，或配合循环按段分发素材。",
+  0: "指定素材（tab_references）：仅输出「Tab索引」选中的那个 Tab 页的参考 bundle。索引越界自动收敛到最后一个。\n适用于按编号逐段生成视频时，只取当前这一段对应的整套素材。",
+  1: "Tab索引（tab_index）：当前实际选中并输出的 Tab 页索引（0-based）。\n当输入索引越界或选中空 Tab 时，会自动收敛到有效 Tab，此输出反映最终生效的索引。",
 };
 const TOOLTIP_OUT_SPLITTER = {};
 for (const cat of ["关键帧", "角色", "道具", "场景"])

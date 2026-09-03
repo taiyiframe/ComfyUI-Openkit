@@ -38,13 +38,13 @@ loader = nodes.NODE_CLASS_MAPPINGS["MediaLoader"]
 inputs = loader.INPUT_TYPES()
 assert "media_state" in inputs["required"]
 assert "tab_index" in inputs["required"]
-assert loader.RETURN_TYPES == ("MEDIA_REFS", "MEDIA_REFS", "INT")
-assert loader.RETURN_NAMES == ("全部素材", "指定素材", "段数")
+assert loader.RETURN_TYPES == ("MEDIA_REFS", "INT")
+assert loader.RETURN_NAMES == ("指定素材", "Tab索引")
 assert loader.FUNCTION == "load_media"
 assert loader.CATEGORY == "Openkit"
 assert loader.VALIDATE_INPUTS("[]") is True
 assert loader.VALIDATE_INPUTS("{ not json") != True
-print("Loader contract OK: multi-tab -> 全部素材 / 指定素材 / 段数")
+print("Loader contract OK: multi-tab -> 指定素材 / Tab索引")
 
 # Splitter contract.
 splitter = nodes.NODE_CLASS_MAPPINGS["ReferenceSplitter"]

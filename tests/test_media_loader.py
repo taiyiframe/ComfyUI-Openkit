@@ -129,12 +129,15 @@ multi = json.dumps({"tabs": [
   {"name": "T3", "items": [{"kind": "audio", "file": "c.wav"}]},
 ]}, ensure_ascii=False)
 r = loader.load_media(media_state=multi, tab_index=0)   # 0-based: tab 0
-assert r[1]["items"][0]["kind"] == "picture", r[1]
+assert r[0]["items"][0]["kind"] == "picture", r[0]
+assert r[1] == 0, r[1]
 r = loader.load_media(media_state=multi, tab_index=2)   # 0-based: tab 2
-assert r[1]["items"][0]["kind"] == "audio", r[1]
+assert r[0]["items"][0]["kind"] == "audio", r[0]
+assert r[1] == 2, r[1]
 r = loader.load_media(media_state=multi, tab_index=99)  # clamp to last tab
-assert r[1]["items"][0]["kind"] == "audio", r[1]
+assert r[0]["items"][0]["kind"] == "audio", r[0]
+assert r[1] == 2, r[1]
 r = loader.load_media(media_state=multi, tab_index=0)   # first tab
-assert r[1]["items"][0]["kind"] == "picture", r[1]
-assert r[2] == 3
-print("Test7 0-based tab_index routing OK (0/2/99 -> picture/audio/audio, count=3)")
+assert r[0]["items"][0]["kind"] == "picture", r[0]
+assert r[1] == 0, r[1]
+print("Test7 0-based tab_index routing OK (0/2/99 -> picture/audio/audio, idx=0/2/2)")

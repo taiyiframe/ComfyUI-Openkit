@@ -216,9 +216,8 @@ class MediaLoader:
 
     Each added tab is a complete, independent reference set (pictures,
     videos, soundtracks, audios). Outputs:
-      - references       : every tab merged into a single bundle
       - tab_references   : the bundle of the tab picked by tab_index
-      - tab_count        : number of tabs
+      - tab_index        : index of the currently selected tab (0-based)
     """
 
     @classmethod
@@ -259,17 +258,14 @@ class MediaLoader:
     def VALIDATE_INPUTS(cls, media_state="[]", **kwargs):
         return _validate_state(media_state)
 
-    RETURN_TYPES = (MEDIA_REFS, MEDIA_REFS, "INT")
-    RETURN_NAMES = ("全部素材", "指定素材", "段数")
+    RETURN_TYPES = (MEDIA_REFS, "INT")
+    RETURN_NAMES = ("指定素材", "Tab索引")
     OUTPUT_TOOLTIPS = (
-        "references（全部素材）：把所有 Tab 的素材合并为一个参考 bundle，"
-        "按 Tab 添加顺序排列，图片/视频/视频音轨/音频分别依次编号。\n"
-        "适用于一次性把全部视频段的参考素材传给下游参考节点的场景。",
         "tab_references（指定素材）：仅输出「Tab索引」选中的那个 Tab 页的参考 bundle。"
         "索引越界自动收敛到最后一个。\n"
         "适用于按编号逐段生成视频时，只取当前这一段对应的整套素材。",
-        "tab_count（段数）：当前已配置的 Tab 数量（整数）。\n"
-        "用于下游判断总共有几个视频段，或配合循环按段分发素材。",
+        "tab_index（Tab索引）：当前实际选中并输出的 Tab 页索引（0-based）。\n"
+        "当输入索引越界或选中空 Tab 时，会自动收敛到有效 Tab，此输出反映最终生效的索引。",
     )
     FUNCTION = "load_media"
     CATEGORY = "Openkit"
@@ -278,7 +274,7 @@ class MediaLoader:
         "complete, independent reference set (12 pictures / 3 videos / "
         "3 audio clips, per-video budget); the tabs are not bounded by a "
         "combined total. Use 'Tab索引' to pick the set for a given video "
-        "shot and read 'tab_references', or take the merged 'references'."
+        "shot and read '指定素材'."
     )
 
     def load_media(self, media_state="[]", tab_index=0):
@@ -288,11 +284,6 @@ class MediaLoader:
         tabs = _parse_tabs(media_state)
         if tabs is None:
             raise ValueError("Media Loader state is corrupt; clear the node and re-add media.")
-
-        all_items = []
-        for _name, items in tabs:
-            all_items.extend(items)
-        merged = _build_bundle(all_items)
 
         idx = 0
         if tabs:
@@ -308,9 +299,9 @@ class MediaLoader:
                 (i for i, (_n, items) in enumerate(tabs) if items), None)
             if filled is not None and not tabs[idx][1]:
                 idx = filled
-        tab_bundle = _build_bundle(tabs[idx][1]) if tabs else merged
+        tab_bundle = _build_bundle(tabs[idx][1]) if tabs else _build_bundle([])
 
-        return (merged, tab_bundle, len(tabs))
+        return (tab_bundle, idx)
 
 
 class ReferenceSplitter:
@@ -324,8 +315,7 @@ class ReferenceSplitter:
                     MEDIA_REFS,
                     {
                         "tooltip": "要拆分的参考 bundle，通常来自 "
-                                   "MediaLoader 的「references（全部素材）」"
-                                   "或「tab_references（指定素材）」输出。\n"
+                                   "MediaLoader 的「指定素材」输出。\n"
                                    "超宽的 bundle 会被裁剪到前 N 个槽位。",
                     },
                 ),
