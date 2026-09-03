@@ -2475,8 +2475,9 @@ export function addSplitter(node) {
   try {
     sp.pos = [node.pos[0] + ((node.size?.[0] || NODE_W) + 60), node.pos[1]];
   } catch (e) { /* let the renderer place it */ }
-  // 接入当前 Tab 的指定素材（tab_references），保证展开即正确拆分当前页素材
-  node.connect(1, sp, 0);
+  // 接入当前 Tab 的指定素材（output 0 = 指定素材，原 tab_references），
+  // 保证展开即正确拆分当前页素材。
+  node.connect(0, sp, 0);
   try { app.graph.setDirtyCanvas(true, true); } catch (e) { /* Vue redraws */ }
   flash("已展开拆分节点，请将其输出接到下游视频生成节点");
   return sp;
