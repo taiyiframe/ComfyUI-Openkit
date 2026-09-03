@@ -127,12 +127,41 @@ const CSS = `
 .mspe-preview-btn:hover{background:#333b4d;border-color:#4a5568;}
 .mspe-preview-btn.active{background:#3a5a40;border-color:#4a7c59;color:#fff;}
 .mspe-preview-textarea{width:100%;flex:1;min-height:200px;background:#0d1015;
-  color:#a8d5a8;border:1px solid #2a2f3a;border-radius:6px;padding:8px;
+  color:#c8d5c8;border:1px solid #2a2f3a;border-radius:6px;padding:8px;
   font-size:11px;font-family:ui-monospace,Consolas,monospace;resize:none;
   box-sizing:border-box;white-space:pre;overflow:auto;line-height:1.6;
   height:100%;}
-.mspe-preview-label{font-size:11px;color:#6b7280;margin-bottom:2px;
-  letter-spacing:.03em;flex:0 0 auto;}
+.mspe-preview-textarea:focus{outline:none;border-color:#4a7c59;}
+.mspe-preview-textarea.error{border-color:#b05252;background:#1a0d0d;}
+.mspe-preview-toolbar{display:flex;align-items:center;gap:8px;flex:0 0 auto;
+  margin-bottom:4px;}
+.mspe-validate-btn{background:#2b4a3a;border:1px solid #3a6b4a;color:#a8d5a8;
+  border-radius:6px;padding:4px 12px;font-size:11px;cursor:pointer;
+  font-family:system-ui,sans-serif;flex:0 0 auto;}
+.mspe-validate-btn:hover{background:#335a45;border-color:#4a7c59;}
+.mspe-validate-msg{font-size:11px;flex:1;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;}
+.mspe-validate-msg.ok{color:#52c41a;}
+.mspe-validate-msg.err{color:#ff6b6b;}
+.mspe-tab-rename{width:120px;background:#12151b;color:#dde2ea;
+  border:1px solid #4a5568;border-radius:4px;padding:1px 4px;font-size:11px;
+  box-sizing:border-box;font-family:system-ui,sans-serif;}
+.mspe-edit-dialog{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:99999;
+  display:flex;align-items:center;justify-content:center;}
+.mspe-edit-box{background:#232833;border:1px solid #4a5568;border-radius:8px;
+  padding:14px 16px;min-width:400px;max-width:600px;width:80vw;
+  box-shadow:0 8px 30px rgba(0,0,0,.5);display:flex;flex-direction:column;gap:8px;}
+.mspe-edit-title{color:#dde2ea;font-size:13px;font-weight:500;}
+.mspe-edit-textarea{width:100%;min-height:160px;background:#12151b;color:#dde2ea;
+  border:1px solid #2e3440;border-radius:6px;padding:6px;font-size:12px;
+  font-family:ui-monospace,Consolas,monospace;resize:vertical;box-sizing:border-box;
+  white-space:pre;overflow:auto;line-height:1.5;}
+.mspe-edit-textarea:focus{outline:none;border-color:#4a5568;}
+.mspe-edit-btns{display:flex;justify-content:flex-end;gap:8px;}
+.mspe-num-display{display:inline-flex;align-items:center;justify-content:center;
+  min-width:40px;background:#12151b;color:#dde2ea;border:1px solid #2e3440;
+  border-radius:4px;padding:3px 8px;font-size:12px;font-family:ui-monospace,monospace;
+  box-sizing:border-box;cursor:default;user-select:none;}
 `;
 
 let cssDone = false;
@@ -178,25 +207,50 @@ function truncate(str, len) {
 /**
  * 构建一个 Tab 栏并返回控制对象。
  * @param {Object} opts
- *   items: 当前条目数组（用于渲染标签）
- *   getLabel: (item, idx) => string  Tab 显示名
+ *   items: 当前条目数组
+ *   getLabel: (item, idx) => string  Tab 显示名（不含编号）
+ *   getIdx: (item, idx) => string|number  自定义编号显示（默认数组索引+1）
  *   curIdx: 当前激活索引
  *   onSelect: (idx) => void
  *   onAdd: () => void
- *   onDelete: (idx) => void  （已含二次确认逻辑由调用方处理）
- *   showAdd: boolean
- *   showDelete: boolean
+ *   onDelete: (idx) => void
+ *   onRename: (idx, newName) => void  双击编辑标题回调
+ *   showAdd / showDelete: boolean
  */
 function buildTabBar(opts) {
   const bar = makeEl("div", "mspe-tabbar");
   const items = opts.items || [];
   items.forEach((item, i) => {
     const tab = makeEl("div", "mspe-tab" + (i === opts.curIdx ? " active" : ""));
-    const idxTag = makeEl("span", "mspe-tab-idx", "#" + (i + 1));
+    const idxVal = typeof opts.getIdx === "function" ? opts.getIdx(item, i) : (i + 1);
+    const idxTag = makeEl("span", "mspe-tab-idx", "#" + idxVal);
     const nameEl = makeEl("span", "mspe-tab-name", opts.getLabel(item, i) || ("条目 " + (i + 1)));
     tab.append(idxTag, nameEl);
-    tab.title = "点击切换";
+    tab.title = "点击切换；双击编辑标题";
     tab.addEventListener("click", () => opts.onSelect(i));
+    // 双击编辑标题（编号固定不可编辑，只编辑标题文字部分）
+    if (typeof opts.onRename === "function") {
+      nameEl.addEventListener("dblclick", (ev) => {
+        ev.stopPropagation();
+        const inp = makeEl("input", "mspe-tab-rename");
+        inp.value = opts.getLabel(item, i) || "";
+        inp.maxLength = 60;
+        nameEl.textContent = "";
+        nameEl.append(inp);
+        inp.focus();
+        inp.select();
+        const commit = () => {
+          const v = inp.value.trim();
+          opts.onRename(i, v);
+        };
+        inp.addEventListener("blur", commit);
+        inp.addEventListener("keydown", (e) => {
+          e.stopPropagation();
+          if (e.key === "Enter") { inp.blur(); }
+          else if (e.key === "Escape") { inp.value = opts.getLabel(item, i) || ""; inp.blur(); }
+        });
+      });
+    }
     if (opts.showDelete !== false) {
       const x = makeEl("span", "mspe-tab-x", "×");
       x.title = "删除该条目";
@@ -256,11 +310,29 @@ app.registerExtension({
       const spacer = makeEl("div");
       spacer.style.flex = "1";
       const previewBtn = makeEl("button", "mspe-preview-btn", "预览 JSON");
-      previewBtn.title = "点击切换到 JSON 预览模式（只读），再次点击返回编辑";
+      previewBtn.title = "点击切换到 JSON 预览/编辑模式，再次点击返回可视化编辑";
       previewBtn.addEventListener("click", () => {
-        this._previewMode = !this._previewMode;
-        previewBtn.classList.toggle("active", this._previewMode);
-        previewBtn.textContent = this._previewMode ? "返回编辑" : "预览 JSON";
+        if (this._previewMode) {
+          // 从预览切回编辑：先校验 JSON
+          const ta = this._dom.content.querySelector(".mspe-preview-textarea");
+          if (ta) {
+            const result = this._validateJson(ta.value);
+            if (!result.ok) {
+              this._showValidateMsg(false, "JSON 格式错误：" + result.error + "，请修正后再切换");
+              return;
+            }
+            // 校验通过，更新数据
+            this._data = result.data;
+            this._syncJson();
+          }
+          this._previewMode = false;
+          previewBtn.classList.remove("active");
+          previewBtn.textContent = "预览 JSON";
+        } else {
+          this._previewMode = true;
+          previewBtn.classList.add("active");
+          previewBtn.textContent = "返回编辑";
+        }
         this._renderContent();
       });
       toolbar.append(spacer, previewBtn);
@@ -308,6 +380,32 @@ app.registerExtension({
         if (w) w.value = JSON.stringify(this._data, null, 2);
       };
 
+      /* ---- JSON 校验 ---- */
+      this._validateJson = (text) => {
+        try {
+          const data = JSON.parse(text);
+          if (typeof data !== "object" || data === null || Array.isArray(data)) {
+            return { ok: false, error: "根节点必须是对象" };
+          }
+          return { ok: true, data: data };
+        } catch (e) {
+          return { ok: false, error: e.message };
+        }
+      };
+
+      /* ---- 显示校验提示 ---- */
+      this._showValidateMsg = (ok, msg) => {
+        const el = this._dom.content.querySelector(".mspe-validate-msg");
+        if (el) {
+          el.textContent = msg;
+          el.className = "mspe-validate-msg " + (ok ? "ok" : "err");
+        }
+        const ta = this._dom.content.querySelector(".mspe-preview-textarea");
+        if (ta) {
+          ta.classList.toggle("error", !ok);
+        }
+      };
+
       /* ---- 渲染顶层 Tab ---- */
       this._renderTopTabs = () => {
         const bar = this._dom.topTabbar;
@@ -330,15 +428,31 @@ app.registerExtension({
         const c = this._dom.content;
         c.innerHTML = "";
 
-        // 预览模式：显示只读 JSON 文本框，隐藏顶层 Tab 栏
+        // 预览/编辑 JSON 模式
         if (this._previewMode) {
           this._dom.topTabbar.style.display = "none";
-          const label = makeEl("div", "mspe-preview-label", "JSON 预览（只读，实时同步编辑内容）");
+          // 工具栏：校验按钮 + 提示信息
+          const ptoolbar = makeEl("div", "mspe-preview-toolbar");
+          const validateBtn = makeEl("button", "mspe-validate-btn", "校验格式");
+          validateBtn.title = "校验当前 JSON 格式是否正确";
+          const msgEl = makeEl("span", "mspe-validate-msg", "");
+          ptoolbar.append(validateBtn, msgEl);
+          // 可编辑文本框
           const ta = makeEl("textarea", "mspe-preview-textarea");
-          ta.readOnly = true;
           ta.spellcheck = false;
           ta.value = JSON.stringify(this._data, null, 2);
-          c.append(label, ta);
+          ta.placeholder = "在此粘贴或编辑完整 JSON…";
+          validateBtn.addEventListener("click", () => {
+            const result = this._validateJson(ta.value);
+            if (result.ok) {
+              this._data = result.data;
+              this._syncJson();
+              this._showValidateMsg(true, "格式校验通过，数据已同步");
+            } else {
+              this._showValidateMsg(false, "格式错误：" + result.error);
+            }
+          });
+          c.append(ptoolbar, ta);
           return;
         }
 
@@ -403,6 +517,13 @@ app.registerExtension({
                 this._renderContent();
               });
           },
+          onRename: (i, newName) => {
+            if (newName) {
+              this._data[key][i] = newName;
+              this._syncJson();
+            }
+            this._renderContent();
+          },
         });
         container.append(tabbar);
 
@@ -431,10 +552,8 @@ app.registerExtension({
         const tabbar = buildTabBar({
           items: shots,
           curIdx: curIdx,
-          getLabel: (shot) => {
-            const t = truncate(shot["标题"], 12) || "未命名";
-            return "#" + (shot["编号"] || "") + " " + t;
-          },
+          getIdx: (shot) => shot["编号"] || (curIdx + 1),
+          getLabel: (shot) => truncate(shot["标题"], 14) || "未命名",
           onSelect: (i) => {
             this._curShot = i;
             this._curMove = 0;
@@ -454,7 +573,7 @@ app.registerExtension({
             if (shots.length <= 1) return;
             const title = truncate(shots[i]["标题"], 20) || "未命名";
             this._confirm(
-              "确定要删除第 " + (i + 1) + " 个分镜「" + title + "」吗？\n删除后所有字段（含运镜）将丢失且不可恢复。",
+              "确定要删除第 " + (shots[i]["编号"] || (i + 1)) + " 个分镜「" + title + "」吗？\n删除后所有字段（含运镜）将丢失且不可恢复。",
               () => {
                 shots.splice(i, 1);
                 if (this._curShot >= shots.length) this._curShot = shots.length - 1;
@@ -463,27 +582,23 @@ app.registerExtension({
                 this._renderContent();
               });
           },
+          onRename: (i, newName) => {
+            shots[i]["标题"] = newName || ("分镜" + (shots[i]["编号"] || (i + 1)));
+            this._syncJson();
+            this._renderContent();
+          },
         });
         container.append(tabbar);
 
         if (shots.length === 0) return;
         const shot = shots[curIdx];
 
-        // 编号
+        // 编号（只读，与 Tab 标题编号一致，自动显示不可编辑）
         const rowNum = makeEl("div", "mspe-field-row inline");
         rowNum.append(makeEl("div", "mspe-field-label", "编号"));
-        const numInp = makeEl("input", "mspe-intinput");
-        numInp.type = "number";
-        numInp.value = shot["编号"] ?? curIdx + 1;
-        numInp.min = "0";
-        numInp.addEventListener("change", () => {
-          const v = parseInt(numInp.value, 10);
-          shot["编号"] = Number.isNaN(v) ? curIdx + 1 : v;
-          this._syncJson();
-          const nameEl = tabbar.children[curIdx]?.querySelector(".mspe-tab-name");
-          if (nameEl) nameEl.textContent = "#" + shot["编号"] + " " + (truncate(shot["标题"], 12) || "未命名");
-        });
-        rowNum.append(numInp);
+        const numDisplay = makeEl("span", "mspe-num-display", String(shot["编号"] ?? (curIdx + 1)));
+        numDisplay.title = "编号自动生成，不可编辑";
+        rowNum.append(numDisplay);
         container.append(rowNum);
 
         // 类型：文戏/武戏 下拉 + 秒数 5-12 下拉
@@ -526,7 +641,7 @@ app.registerExtension({
           shot["标题"] = titleInp.value;
           this._syncJson();
           const nameEl = tabbar.children[curIdx]?.querySelector(".mspe-tab-name");
-          if (nameEl) nameEl.textContent = "#" + shot["编号"] + " " + (truncate(titleInp.value, 12) || "未命名");
+          if (nameEl) nameEl.textContent = truncate(titleInp.value, 14) || "未命名";
         });
         rowTitle.append(titleInp);
         container.append(rowTitle);
@@ -577,6 +692,13 @@ app.registerExtension({
                 this._syncJson();
                 this._renderContent();
               });
+          },
+          onRename: (i, newName) => {
+            if (newName) {
+              shot["运镜"][i] = newName;
+              this._syncJson();
+            }
+            this._renderContent();
           },
         });
         container.append(moveBar);
