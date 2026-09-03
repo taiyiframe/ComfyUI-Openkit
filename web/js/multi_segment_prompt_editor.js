@@ -227,11 +227,17 @@ function buildTabBar(opts) {
     const nameEl = makeEl("span", "mspe-tab-name", opts.getLabel(item, i) || ("条目 " + (i + 1)));
     tab.append(idxTag, nameEl);
     tab.title = "点击切换；双击编辑标题";
-    tab.addEventListener("click", () => opts.onSelect(i));
-    // 双击编辑标题（编号固定不可编辑，只编辑标题文字部分）
+    tab.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      opts.onSelect(i);
+    });
+    // 双击编辑标题（绑定在整个 tab 上，stopPropagation 防止 ComfyUI 画布拦截）
     if (typeof opts.onRename === "function") {
-      nameEl.addEventListener("dblclick", (ev) => {
+      tab.addEventListener("dblclick", (ev) => {
         ev.stopPropagation();
+        ev.preventDefault();
+        // 如果点的是删除按钮则不触发
+        if (ev.target.classList.contains("mspe-tab-x")) return;
         const inp = makeEl("input", "mspe-tab-rename");
         inp.value = opts.getLabel(item, i) || "";
         inp.maxLength = 60;
@@ -249,6 +255,9 @@ function buildTabBar(opts) {
           if (e.key === "Enter") { inp.blur(); }
           else if (e.key === "Escape") { inp.value = opts.getLabel(item, i) || ""; inp.blur(); }
         });
+        // 阻止 input 上的点击冒泡到 tab
+        inp.addEventListener("click", (e) => e.stopPropagation());
+        inp.addEventListener("dblclick", (e) => e.stopPropagation());
       });
     }
     if (opts.showDelete !== false) {
