@@ -857,11 +857,11 @@ const CSS = `
 .mml-topbtn:hover{background:#333b4d;}
 /* Tab 页签（样式与多Tab字符串节点的 Tab 一致） */
 .mml-tab{display:inline-flex;align-items:center;gap:4px;
-  background:#232833;border:1px solid #2e3440;color:#8a93a3;border-radius:6px;
+  background:var(--ok-panel-2);border:1px solid var(--ok-line-2);color:var(--ok-dim);border-radius:6px;
   padding:3px 6px 3px 8px;font-size:11px;cursor:pointer;user-select:none;
   max-width:200px;flex:0 0 auto;}
-.mml-tab:hover{background:#2b3140;color:#c9cfda;}
-.mml-tab.active{background:#3a4252;color:#fff;border-color:#4a5568;}
+.mml-tab:hover{background:var(--ok-panel-2);color:var(--ok-text);}
+.mml-tab.active{background:var(--ok-accent-bg);color:var(--ok-accent);border-color:var(--ok-accent-2);}
 .mml-tab-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .mml-tab-count{font-size:9px;color:#7fc1a5;background:#1c2a26;border:1px solid #2f4a40;
   border-radius:8px;padding:0 4px;font-family:ui-monospace,monospace;flex:0 0 auto;}

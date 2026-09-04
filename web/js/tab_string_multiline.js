@@ -29,44 +29,44 @@ const CSS = `
   color:var(--ok-text);font-size:12px;overflow:hidden;}
 .tsm-top{display:flex;align-items:center;gap:6px;flex:0 0 auto;}
 .tsm-toplabel{font-size:11px;color:var(--ok-dim);flex:0 0 auto;letter-spacing:.03em;}
-.tsm-idx{width:56px;background:var(--ok-panel-2);color:#dde2ea;border:1px solid #4a5568;
+.tsm-idx{width:56px;background:var(--ok-panel-2);color:var(--ok-text);border:1px solid var(--ok-line-2);
   border-radius:6px;padding:3px 6px;font-size:12px;font-family:var(--ok-mono);}
 .tsm-idx:focus{outline:none;border-color:var(--ok-accent-2);}
-.tsm-btn{background:var(--ok-panel);border:1px solid #3a4252;color:var(--ok-text);border-radius:var(--ok-radius);
+.tsm-btn{background:var(--ok-panel);border:1px solid var(--ok-line);color:var(--ok-text);border-radius:var(--ok-radius);
   padding:4px 10px;font-size:11px;cursor:pointer;flex:0 0 auto;font-family:var(--ok-font);
   transition:background var(--ok-transition), border-color var(--ok-transition), color var(--ok-transition);}
-.tsm-btn:hover{background:#333b4d;}
+.tsm-btn:hover{background:var(--ok-panel-2);}
 .tsm-tabs{display:flex;gap:3px;flex:0 0 auto;flex-wrap:wrap;align-items:center;}
 .tsm-tab{display:inline-flex;align-items:center;gap:4px;
-  background:#232833;border:1px solid var(--ok-line-2);color:var(--ok-dim);border-radius:6px;
+  background:var(--ok-panel-2);border:1px solid var(--ok-line-2);color:var(--ok-dim);border-radius:6px;
   padding:3px 6px 3px 8px;font-size:11px;cursor:pointer;user-select:none;
   max-width:200px;}
-.tsm-tab:hover{background:#2b3140;color:#c9cfda;}
-.tsm-tab.active{background:#3a4252;color:#fff;border-color:#4a5568;}
+.tsm-tab:hover{background:var(--ok-panel-2);color:var(--ok-text);}
+.tsm-tab.active{background:var(--ok-accent-bg);color:var(--ok-accent);border-color:var(--ok-accent-2);}
 .tsm-tab-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 /* 关闭按钮与标题保持较长间距（≥4 个汉字，em 单位随字号等比缩放，
    任意画布 zoom/节点缩放下视觉间距恒定），避免误触 */
 .tsm-tab-x{flex:0 0 auto;margin-left:4.2em;font-size:11px;line-height:1;
-  color:#7b8494;padding:1px 3px;border-radius:3px;cursor:pointer;z-index:2;}
-.tsm-tab-x:hover{color:#ff6b6b;background:#454f63;}
+  color:var(--ok-dim);padding:1px 3px;border-radius:3px;cursor:pointer;z-index:2;}
+.tsm-tab-x:hover{color:var(--ok-err);background:var(--ok-line-2);}
 /* 自定义二次确认弹窗（不依赖 window.confirm，避免在 ComfyUI 画布中被拦截） */
 .tsm-modal{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:99999;
   display:flex;align-items:center;justify-content:center;}
-.tsm-modal-box{background:#232833;border:1px solid #4a5568;border-radius:8px;
+.tsm-modal-box{background:var(--ok-panel-2);border:1px solid var(--ok-line-2);border-radius:8px;
   padding:16px 18px;min-width:300px;max-width:440px;box-shadow:0 8px 30px rgba(0,0,0,.5);}
-.tsm-modal-msg{color:#dde2ea;font-size:13px;line-height:1.6;margin-bottom:16px;
+.tsm-modal-msg{color:var(--ok-text);font-size:13px;line-height:1.6;margin-bottom:16px;
   white-space:pre-wrap;word-break:break-all;}
 .tsm-modal-btns{display:flex;justify-content:flex-end;gap:8px;}
 .tsm-modal-btns .tsm-btn{padding:5px 14px;font-size:12px;}
 .tsm-modal-cancel{background:var(--ok-panel);}
 .tsm-modal-ok{background:#8b3a3a;border-color:#b05252;color:#fff;}
 .tsm-modal-ok:hover{background:#a04545;}
-.tsm-tab.tsm-add{background:transparent;border:1px dashed #3a4252;color:var(--ok-dim);
+.tsm-tab.tsm-add{background:transparent;border:1px dashed var(--ok-line-2);color:var(--ok-dim);
   padding:3px 10px;font-size:13px;font-weight:600;}
-.tsm-tab.tsm-add:hover{background:var(--ok-panel);color:var(--ok-text);border-color:#4a5568;}
-.tsm-rename{width:140px;background:var(--ok-panel-2);color:#dde2ea;border:1px solid #4a5568;
+.tsm-tab.tsm-add:hover{background:var(--ok-panel);color:var(--ok-text);border-color:var(--ok-line-2);}
+.tsm-rename{width:140px;background:var(--ok-panel-2);color:var(--ok-text);border:1px solid var(--ok-line-2);
   border-radius:4px;padding:1px 4px;font-size:11px;box-sizing:border-box;}
-.tsm-text{flex:1;min-height:120px;background:var(--ok-panel-2);color:#dde2ea;
+.tsm-text{flex:1;min-height:120px;background:var(--ok-panel-2);color:var(--ok-text);
   border:1px solid var(--ok-line-2);border-radius:6px;padding:6px;font-size:12px;
   font-family:var(--ok-mono);resize:none;box-sizing:border-box;
   white-space:pre;overflow:auto;}
