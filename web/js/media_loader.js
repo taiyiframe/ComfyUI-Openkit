@@ -501,8 +501,11 @@ const CSS = `
   width:100%;height:100%;min-height:476px;overflow:hidden;}
 .mml-cols{flex:1;min-height:132px;display:grid;
   grid-template-columns:minmax(0,7fr) minmax(0,3fr) minmax(0,3fr);
-  gap:9px;overflow:hidden;}
-.mml-col{display:flex;flex-direction:column;gap:5px;min-width:0;overflow:hidden;}
+  gap:0;overflow:hidden;}
+.mml-col{display:flex;flex-direction:column;gap:5px;min-width:0;overflow:hidden;
+  box-sizing:border-box;}
+/* 三栏之间统一风格分割线（仅后续列），与 UI tokens 一致 */
+.mml-col + .mml-col{border-left:1px solid var(--ok-line);padding-left:9px;}
 .mml-modal .mml-panel{border:0;height:100%;min-height:0;}
 .mml-overlay{position:fixed;inset:0;z-index:10040;background:rgba(8,10,14,.62);
   display:flex;align-items:center;justify-content:center;}
@@ -592,7 +595,7 @@ const CSS = `
 .mml-dims:empty{display:none;}
 .mml-lightdims{font-size:10px;color:var(--ok-dim);font-family:var(--ok-mono);}
 .mml-pic{position:absolute;left:0;right:0;top:24px;bottom:0;width:100%;
-  object-fit:cover;object-position:center center;
+  object-fit:contain;object-position:center center;
   display:block;cursor:zoom-in;background:#0d1015;}
 .mml-picbar{position:absolute;left:0;right:0;bottom:0;display:flex;align-items:center;
   gap:4px;padding:1px 4px;background:rgba(10,12,16,.82);min-width:0;overflow:hidden;}
@@ -618,7 +621,7 @@ const CSS = `
 .mml-row{display:flex;align-items:center;gap:6px;padding:0 6px;height:100%;
   box-sizing:border-box;min-width:0;overflow:hidden;}
 .mml-vthumb{flex:1 1 auto;min-width:60px;max-width:45%;height:calc(100% - 8px);
-  width:auto;border-radius:4px;object-fit:cover;background:#0d1015;
+  width:auto;border-radius:4px;object-fit:contain;background:#0d1015;
   flex-shrink:1;cursor:zoom-in;}
 .mml-meta{min-width:0;flex:1;}
 .mml-name{font-size:9px;color:var(--ok-faint);overflow:hidden;text-overflow:ellipsis;

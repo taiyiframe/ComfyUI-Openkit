@@ -5,9 +5,9 @@
  *     (falling back to Openkit's own values when it does not), so Openkit
  *     panels track the user's ComfyUI theme instead of fighting it.
  *   - Applies the original "Lite Design" signature: neutral dark surfaces,
- *     an amber accent (#b08d2e family), 6px radius, 150ms feedback, hairline
- *     borders, semantic status colors. The theme should feel invisible —
- *     content first, chrome second.
+ *     the ComfyUI-logo yellow accent (#f0f050 family, unified Openkit standard),
+ *     6px radius, 150ms feedback, hairline borders, semantic status colors.
+ *     The theme should feel invisible — content first, chrome second.
  *
  * Load exactly once (idempotent). Each node front-end imports this module
  * and calls injectOpenkitUI() during onNodeCreated; its CSS then uses the
@@ -30,10 +30,10 @@ export function injectOpenkitUI() {
   --ok-text:    var(--fg-color,       #d7dbe2);
   --ok-dim:     #8a93a3;
   --ok-faint:   #6b7484;
-  /* ---- Lite Design accent ---- */
-  --ok-accent:   #b08d2e;   /* amber — Openkit signature */
-  --ok-accent-2: #e0a94c;
-  --ok-accent-bg:#6d5527;   /* picture border / active fills */
+  /* ---- Lite Design accent (ComfyUI-logo yellow #f0f050, unified standard) ---- */
+  --ok-accent:   #f0f050;   /* yellow — Openkit unified accent */
+  --ok-accent-2: #e6e660;   /* softer derived yellow (hover/focus) */
+  --ok-accent-bg:#3a3a12;   /* dark-yellow fills / picture borders */
   /* ---- media semantic colors ---- */
   --ok-video:  #4cc3e0;
   --ok-audio:  #b48ce8;
