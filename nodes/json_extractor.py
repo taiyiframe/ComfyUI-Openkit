@@ -145,6 +145,12 @@ class JsonExtractor:
                     "display_name": "情节输出",
                     "tooltip": "控制「分镜序列」端口输出内容：开=输出「分镜情节」中该编号分镜的「情节」内容（纯文本，替代整合格式）；关=输出 H3 六段标准提示词 + 自定义段落。"
                 }),
+                "顶部自定义段落": ("STRING", {
+                    "multiline": True,
+                    "default": "",
+                    "display_name": "自定义段落（开头插入）",
+                    "tooltip": "自定义段落，插入在分镜序列 H3 六段标准提示词最开头（subject_definitions 之前）。留空则不插入。"
+                }),
                 "自定义段落": ("STRING", {
                     "multiline": True,
                     "default": DEFAULT_NEGATIVE,
@@ -446,7 +452,7 @@ class JsonExtractor:
         return f"[{shot_type}] 0\u2013{duration_str}s，{processed}"
 
     @staticmethod
-    def _build_detailed_description(主体定义, 摘要, retention_text, 整体风格, 运镜, 环境音, BGM, 类型="", bgm_enabled=True, 自定义段落="", 强制禁止BGM=False):
+    def _build_detailed_description(主体定义, 摘要, retention_text, 整体风格, 运镜, 环境音, BGM, 类型="", bgm_enabled=True, 自定义段落="", 强制禁止BGM=False, 顶部自定义段落=""):
         if isinstance(运镜, str):
             shot_lines = 运镜.split("\n") if 运镜.strip() else []
         elif isinstance(运镜, list):
@@ -462,6 +468,9 @@ class JsonExtractor:
                 else:
                     numbered.append(f"→{s}")
         blocks = []
+        # 顶部自定义段落：插入在最开头（subject_definitions 之前）
+        if 顶部自定义段落:
+            blocks.append(顶部自定义段落)
         blocks.append("subject_definitions:" + ("\n" + 主体定义 if 主体定义 else ""))
         blocks.append("summary:" + ("\n" + 摘要 if 摘要 else ""))
         blocks.append("retention_analysis:" + ("\n" + retention_text if retention_text else ""))
@@ -536,7 +545,7 @@ class JsonExtractor:
                     result.append(idx)
         return result
 
-    def extract_json(self, json=None, 索引=1, 档案选择="角色档案", 角色开关=True, 道具开关=True, 场景开关=True, 关键帧开关=True, BGM开关=True, 情节开关=False, 自定义段落=""):
+    def extract_json(self, json=None, 索引=1, 档案选择="角色档案", 角色开关=True, 道具开关=True, 场景开关=True, 关键帧开关=True, BGM开关=True, 情节开关=False, 顶部自定义段落="", 自定义段落=""):
         data = json
 
         if isinstance(data, str):
@@ -756,7 +765,7 @@ class JsonExtractor:
             分镜序列整合 = str(情节条目.get("情节"))
         else:
             强制禁止BGM = self._detect_forced_no_bgm(data, 分镜序列条目)
-            分镜序列整合 = self._build_detailed_description(主体定义, 摘要, retention_text, 整体风格, 运镜, 环境音, BGM, matched_type, BGM开关, 自定义段落, 强制禁止BGM)
+            分镜序列整合 = self._build_detailed_description(主体定义, 摘要, retention_text, 整体风格, 运镜, 环境音, BGM, matched_type, BGM开关, 自定义段落, 强制禁止BGM, 顶部自定义段落)
 
         场景判断 = False
         if found_shot and isinstance(分镜序列数据, list):
