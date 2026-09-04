@@ -25,6 +25,17 @@ export const CLIP = { min: 2, max: 15, totalPerType: 15 };
 export const PIC_CATEGORIES = ["关键帧", "角色", "道具", "场景"];
 export const PIC_CAT_PRIORITY = { "关键帧": 0, "角色": 1, "道具": 2, "场景": 3 };
 
+// Performance windowing: above this many pictures the picture wall switches
+// from full render to viewport-windowed rendering (only visible rows are in
+// the DOM, off-screen slots are released so decoded image memory is freed).
+// Below the threshold the classic full render keeps drag-and-drop reorder
+// working across the whole wall. Audio/video stay fully rendered (their rows
+// are cheap and usually few).
+const PIC_WINDOW_THRESHOLD = 24;
+const PIC_WIN_MIN_W = 118;   // must match .mml-pics grid-template-columns minmax()
+const PIC_WIN_GAP = 6;       // must match .mml-pics gap
+const PIC_WIN_OVERSCAN = 2;  // extra rows kept above/below the viewport
+
 export function picCategory(it) {
   const c = it && it.category;
   return PIC_CATEGORIES.includes(c) ? c : "关键帧";
@@ -502,7 +513,7 @@ const CSS = `
 .mml-cols{flex:1;min-height:132px;display:grid;
   grid-template-columns:minmax(0,7fr) minmax(0,3fr) minmax(0,3fr);
   gap:0;overflow:hidden;}
-.mml-col{display:flex;flex-direction:column;gap:5px;min-width:0;overflow:hidden;
+.mml-col{display:flex;flex-direction:column;gap:5px;min-width:0;min-height:0;overflow:hidden;
   box-sizing:border-box;}
 /* 三栏之间统一风格分割线（仅后续列），与 UI tokens 一致 */
 .mml-col + .mml-col{border-left:1px solid var(--ok-line);padding-left:9px;}
@@ -551,13 +562,30 @@ const CSS = `
   text-transform:uppercase;letter-spacing:.07em;color:var(--ok-faint);}
 .mml-sec span{margin-left:auto;text-transform:none;letter-spacing:0;color:#5c6472;
   font-family:var(--ok-mono);}
+/* 窗口化模式下标题行的小“＋”添加入口（图片墙滚动到末尾也能随时加图） */
+.mml-miniadd{flex:0 0 auto;margin-left:6px;width:18px;height:18px;line-height:1;
+  border:1px solid var(--ok-line-2);border-radius:4px;background:var(--ok-panel-2);
+  color:var(--ok-accent-2);font-size:11px;cursor:pointer;padding:0;
+  display:flex;align-items:center;justify-content:center;
+  transition:border-color var(--ok-transition), background var(--ok-transition);}
+.mml-miniadd:hover{border-color:var(--ok-accent-2);background:#1b2230;}
 
 /* 图片区：无数量上限，自适应列数（auto-fill），瓦片墙滚动渲染。
-   槽位长宽比 16/9（与参考帧 2730×1536 一致），cover 填满且几乎不裁切。 */
+   槽位长宽比 16/9（与参考帧 2730×1536 一致），contain 完整显示不裁切。 */
 .mml-pics{flex:1;min-height:0;overflow-y:auto;display:grid;
   grid-template-columns:repeat(auto-fill,minmax(118px,1fr));
   grid-auto-rows:auto;gap:6px;align-content:start;padding-right:2px;
   overscroll-behavior:contain;scrollbar-width:thin;}
+/* 窗口化模式（图片数超阈值）：滚动容器 + 绝对定位行网格。
+   .mml-win-inner 的高度充当 spacer 撑起滚动高度；.mml-win-row 是每行一个
+   绝对定位的 grid 行，只渲染可视行 ± overscan，离屏槽位被释放以回收内存。 */
+.mml-pics.mml-win{display:block;position:relative;overflow-y:auto;
+  padding-right:2px;scrollbar-width:thin;overscroll-behavior:contain;}
+.mml-win-inner{position:relative;width:100%;}
+.mml-win-row{position:absolute;left:0;right:0;display:grid;gap:6px;min-width:0;
+  box-sizing:border-box;}
+.mml-win-row > .mml-slot{width:100%;}
+.mml-winfill{min-height:0;}
 /* 视频/音频区：各占一列，无数量上限，行内滚动 */
 .mml-vids{flex:1;min-height:0;overflow-y:auto;display:grid;
   grid-auto-rows:60px;gap:5px;grid-template-columns:minmax(0,1fr);
@@ -588,13 +616,13 @@ const CSS = `
 .mml-slot.dragging{opacity:.35;}
 .mml-slot.over{outline:1px solid #6f86b8;outline-offset:1px;}
 
-.mml-dims{position:absolute;right:3px;top:27px;padding:1px 4px;border-radius:4px;
+.mml-dims{position:absolute;right:3px;top:25px;padding:1px 4px;border-radius:4px;
   background:rgba(8,10,14,.85);color:#dfe4ec;font-size:8px;line-height:1.2;
   font-family:var(--ok-mono);pointer-events:none;letter-spacing:0;
   text-shadow:0 1px 2px rgba(0,0,0,.9);z-index:2;}
 .mml-dims:empty{display:none;}
 .mml-lightdims{font-size:10px;color:var(--ok-dim);font-family:var(--ok-mono);}
-.mml-pic{position:absolute;left:0;right:0;top:24px;bottom:0;width:100%;
+.mml-pic{position:absolute;left:0;right:0;top:0;bottom:0;width:100%;height:100%;
   object-fit:contain;object-position:center center;
   display:block;cursor:zoom-in;background:#0d1015;}
 .mml-picbar{position:absolute;left:0;right:0;bottom:0;display:flex;align-items:center;
@@ -2098,6 +2126,122 @@ class LoaderPanel {
     return slot;
   }
 
+  /** One filled picture slot (title bar + full-bleed preview + bottom bar).
+   *  Shared by the full render and the windowed render so both stay identical. */
+  _picCell(it, tags) {
+    const tag = (tags.get(it) || "").slice(1, -1);
+    return this.reorderable(el("div",
+      { class: "mml-slot filled pic" + (isOn(it) ? "" : " off") },
+      // Title bar at top: category dropdown + auto-assigned read-only number
+      this.picMetaRow(it),
+      (() => {
+        // Badge and img are SIBLINGS in the slot: .mml-pic is absolutely
+        // positioned against the slot, so wrapping it breaks its sizing.
+        const badge = el("span", { class: "mml-dims" },
+          dimsLabel(it.width, it.height));
+        const img = el("img", { class: "mml-pic", src: viewURL(it.file),
+          title: dimsTitle(it.name, it.width, it.height),
+          style: it.crop ? { clipPath: cropClip(it.crop) } : null,
+          onload: () => {
+            // Items from before dimensions were stored learn them here.
+            if (!it.width && img.naturalWidth) {
+              it.width = img.naturalWidth;
+              it.height = img.naturalHeight;
+              badge.textContent = dimsLabel(it.width, it.height);
+              img.title = dimsTitle(it.name, it.width, it.height);
+              this.commit();
+            }
+          },
+          onclick: () => new ImageCropModal(this, it) });
+        applyPreviewCrop(img, it);
+        if (typeof ResizeObserver !== "undefined") {
+          new ResizeObserver(() => applyPreviewCrop(img, it)).observe(img);
+        }
+        return [img, badge];
+      })(),
+      el("div", { class: "mml-picbar" },
+        this.powerBtn(it),
+        el("span", { class: "mml-tag pic" }, isOn(it) ? tag : "off"),
+        this.cropImageBtn(it),
+        el("span", { class: "mml-x", title: "Remove",
+          onclick: () => this.remove(it) }, "\u2715"))), it);
+  }
+
+  /** Picture wall: full render below the threshold; viewport-windowed render
+   *  above it. The windowed mode keeps only the visible rows (±overscan) in
+   *  the DOM and uses an absolutely-positioned row grid inside a height spacer,
+   *  so hundreds of slots cost the same as a screenful — decoded image memory
+   *  is released as slots leave the viewport. Row geometry is deterministic
+   *  (fixed 16:9 slots in an auto-fill grid), so the window math is exact. */
+  renderPicWall(colPic, pics, tags) {
+    if (pics.length <= PIC_WINDOW_THRESHOLD) {
+      const picCells = pics.map((it) => this._picCell(it, tags));
+      picCells.push(this.addSlot("图片"));
+      colPic.append(el("div", { class: "mml-pics" }, picCells));
+      return;
+    }
+    const scroller = el("div", { class: "mml-pics mml-win" });
+    const inner = el("div", { class: "mml-win-inner" });
+    scroller.append(inner);
+    colPic.append(scroller);
+    const addEl = this.addSlot("图片");
+    const GAP = PIC_WIN_GAP;
+    let cols = 1, rowH = 150, totalRows = 1;
+    const measure = () => {
+      const w = Math.max(1, scroller.clientWidth);
+      cols = Math.max(1, Math.floor((w + GAP) / (PIC_WIN_MIN_W + GAP)));
+      const slotW = (w - (cols - 1) * GAP) / cols;
+      rowH = slotW * 9 / 16 + GAP;   // 16:9 aspect + row gap
+      totalRows = Math.ceil((pics.length + 1) / cols);
+    };
+    let rafRetry = 0;
+    const paint = () => {
+      measure();
+      const st = scroller.scrollTop, ch = scroller.clientHeight;
+      // The scroller may not be laid out yet on the first paint (width/height 0
+      // while the panel is still being assembled). Retry a few frames until its
+      // geometry is real, so the initial window covers the whole viewport.
+      if (scroller.clientWidth <= 1 || ch <= 1) {
+        if (rafRetry < 6) { rafRetry++; requestAnimationFrame(paint); }
+        return;
+      }
+      rafRetry = 0;
+      let r0 = Math.floor(st / rowH) - PIC_WIN_OVERSCAN; if (r0 < 0) r0 = 0;
+      let r1 = Math.ceil((st + ch) / rowH) + PIC_WIN_OVERSCAN; if (r1 > totalRows) r1 = totalRows;
+      inner.style.height = (totalRows * rowH) + "px";   // spacer: drives scrollHeight
+      const frag = document.createDocumentFragment();
+      for (let row = r0; row < r1; row++) {
+        const rowEl = el("div", {
+          class: "mml-win-row",
+          style: {
+            top: (row * rowH) + "px",
+            height: (rowH - GAP) + "px",
+            gridTemplateColumns: "repeat(" + cols + ",1fr)",
+          },
+        });
+        for (let c = 0; c < cols; c++) {
+          const idx = row * cols + c;
+          if (idx < pics.length) rowEl.append(this._picCell(pics[idx], tags));
+          else if (idx === pics.length) rowEl.append(addEl);
+          else rowEl.append(el("div", { class: "mml-winfill" }));
+        }
+        frag.append(rowEl);
+      }
+      inner.replaceChildren(frag);
+    };
+    let raf = 0;
+    scroller.addEventListener("scroll", () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => { raf = 0; paint(); });
+    }, { passive: true });
+    if (typeof ResizeObserver !== "undefined") {
+      const ro = new ResizeObserver(() => paint());
+      ro.observe(scroller);
+      this._picWinRO = ro;   // keep a ref so later renders can drop it
+    }
+    paint();
+  }
+
   render() {
     this.players.forEach((p) => p.stop());
     this.players = [];
@@ -2230,48 +2374,12 @@ class LoaderPanel {
     kids.push(el("div", { class: "mml-cols" }, colPic, colAud, colVid));
 
     colPic.append(el("div", { class: "mml-sec" }, "图片",
-      el("span", {}, `${pics.length}`)));
-    const picCells = [];
-    pics.forEach((it) => {
-      const tag = (tags.get(it) || "").slice(1, -1);
-      picCells.push(this.reorderable(el("div",
-        { class: "mml-slot filled pic" + (isOn(it) ? "" : " off") },
-        // Title bar at top: category dropdown + auto-assigned read-only number
-        this.picMetaRow(it),
-        (() => {
-          // Badge and img are SIBLINGS in the slot: .mml-pic is absolutely
-          // positioned against the slot, so wrapping it breaks its sizing.
-          const badge = el("span", { class: "mml-dims" },
-            dimsLabel(it.width, it.height));
-          const img = el("img", { class: "mml-pic", src: viewURL(it.file),
-            title: dimsTitle(it.name, it.width, it.height),
-            style: it.crop ? { clipPath: cropClip(it.crop) } : null,
-            onload: () => {
-              // Items from before dimensions were stored learn them here.
-              if (!it.width && img.naturalWidth) {
-                it.width = img.naturalWidth;
-                it.height = img.naturalHeight;
-                badge.textContent = dimsLabel(it.width, it.height);
-                img.title = dimsTitle(it.name, it.width, it.height);
-                this.commit();
-              }
-            },
-            onclick: () => new ImageCropModal(this, it) });
-          applyPreviewCrop(img, it);
-          if (typeof ResizeObserver !== "undefined") {
-            new ResizeObserver(() => applyPreviewCrop(img, it)).observe(img);
-          }
-          return [img, badge];
-        })(),
-        el("div", { class: "mml-picbar" },
-          this.powerBtn(it),
-          el("span", { class: "mml-tag pic" }, isOn(it) ? tag : "off"),
-          this.cropImageBtn(it),
-          el("span", { class: "mml-x", title: "Remove",
-            onclick: () => this.remove(it) }, "\u2715"))), it));
-    });
-    picCells.push(this.addSlot("图片"));
-    colPic.append(el("div", { class: "mml-pics" }, picCells));
+      el("span", {}, `${pics.length}`),
+      pics.length > PIC_WINDOW_THRESHOLD
+        ? el("button", { class: "mml-miniadd", title: "Add picture — click to browse or drop files",
+            onclick: () => this.picker.click() }, "\uFF0B")
+        : null));
+    this.renderPicWall(colPic, pics, tags);
 
     colAud.append(el("div", { class: "mml-sec" }, "音频",
       el("span", {}, `${auds.length}`)));
