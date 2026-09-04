@@ -66,6 +66,15 @@ const LANG_PAIRS = [
   ["Enter description of camera move #{n}…", "输入第 {n} 条运镜描述…"],
   ["Enter ambient sound description…", "输入环境音描述…"],
   ["Enter BGM description…", "输入BGM描述…"],
+  ["Project {n}", "项目 {n}"],
+  ["Add project", "添加项目"],
+  ["Delete project", "删除项目"],
+  ["Rename project (double-click tab title)", "双击项目 Tab 标题可重命名"],
+  ["Delete project #{n} ({name})? All modules and shots inside will be lost and cannot be undone.",
+    "确定要删除第 {n} 个项目「{name}」吗？\n项目内所有模块与分镜将丢失且不可恢复。"],
+  ["Maximum {n} projects reached", "已达最多 {n} 个项目上限"],
+  ["Enter project name…", "输入项目名称…"],
+  ["untitled project", "未命名项目"],
 ];
 OKT.addPairs(LANG_PAIRS);
 const tr = (t, p) => OKT.tr(t, p);
@@ -92,6 +101,9 @@ const SHOT_FIELDS = [
 
 const SHOT_TYPES = ["文戏", "武戏"];
 const SHOT_DURATIONS = [5, 6, 7, 8, 9, 10, 11, 12];
+
+// 最外层项目 Tab 上限（与素材加载节点第一层 Tab 数量一致）
+const MAX_PROJECT_TABS = 32;
 
 const DEFAULT_SHOT = {
   "编号": 1, "类型": "文戏：10秒", "标题": "",
@@ -132,6 +144,31 @@ const CSS = `
   background:transparent;border:1px dashed var(--ok-line-2);color:var(--ok-dim);border-radius:6px;
   padding:4px 10px;font-size:13px;font-weight:600;cursor:pointer;flex:0 0 auto;}
 .mspe-tab-add:hover{background:var(--ok-panel);color:var(--ok-text);border-color:var(--ok-line-2);}
+/* 最外层项目 Tab 栏（层级高于模块 Tab，视觉区分） */
+.mspe-projbar{display:flex;gap:3px;flex:0 0 auto;flex-wrap:wrap;align-items:center;
+  padding:4px 6px;background:var(--ok-panel-2);border:1px solid var(--ok-line-2);
+  border-radius:6px;}
+.mspe-proj-tab{display:inline-flex;align-items:center;gap:5px;
+  background:var(--ok-bg);border:1px solid var(--ok-line-2);color:var(--ok-dim);
+  border-radius:5px;padding:4px 10px;font-size:12px;cursor:pointer;user-select:none;
+  max-width:200px;transition:background .15s,color .15s,border-color .15s;}
+.mspe-proj-tab:hover{background:var(--ok-panel);color:var(--ok-text);}
+.mspe-proj-tab.active{background:var(--ok-accent-bg);color:var(--ok-accent);
+  border-color:var(--ok-accent-2);font-weight:600;}
+.mspe-proj-idx{font-size:10px;color:var(--ok-dim);background:var(--ok-line);
+  border-radius:3px;padding:0 5px;font-family:var(--ok-mono);flex:0 0 auto;}
+.mspe-proj-tab.active .mspe-proj-idx{background:var(--ok-accent-2);color:var(--ok-accent-bg);}
+.mspe-proj-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.mspe-proj-x{flex:0 0 auto;margin-left:4px;font-size:11px;line-height:1;
+  color:var(--ok-dim);padding:1px 3px;border-radius:3px;cursor:pointer;}
+.mspe-proj-x:hover{color:var(--ok-err);background:var(--ok-line-2);}
+.mspe-proj-add{display:inline-flex;align-items:center;justify-content:center;
+  background:transparent;border:1px dashed var(--ok-line-2);color:var(--ok-dim);
+  border-radius:5px;padding:4px 12px;font-size:14px;font-weight:600;cursor:pointer;flex:0 0 auto;}
+.mspe-proj-add:hover{background:var(--ok-panel);color:var(--ok-text);border-color:var(--ok-line-2);}
+.mspe-proj-rename{width:140px;background:var(--ok-bg);color:var(--ok-text);
+  border:1px solid var(--ok-accent-2);border-radius:4px;padding:2px 6px;
+  font-size:12px;font-family:var(--ok-font);outline:none;}
 .mspe-content{flex:1;min-height:120px;overflow-y:auto;overflow-x:hidden;
   display:flex;flex-direction:column;gap:8px;padding-top:6px;}
 .mspe-textarea{width:100%;flex:1;min-height:80px;background:var(--ok-panel-2);color:var(--ok-text);
@@ -352,7 +389,9 @@ app.registerExtension({
       injectOpenkitUI();
       injectCSS();
 
-      this._data = deepClone(DEFAULT_DATA);
+      this._tabs = [{ name: tr("未命名项目"), data: deepClone(DEFAULT_DATA) }];
+      this._activeTab = 0;
+      this._data = this._tabs[0].data;
       this._curModule = 0;
       this._previewMode = false;
       // 各 list_str 模块的当前子项索引
@@ -361,7 +400,15 @@ app.registerExtension({
       this._curShot = 0;
       this._curMove = 0; // 当前分镜内的运镜索引
 
-      // 隐藏原生 widget
+      // 隐藏原生 widget（tab_index 选择输出项目；prompt_json 存多项目结构）
+      const tabIdxW = this.widgets?.find((w) => w.name === "tab_index");
+      if (tabIdxW) {
+        tabIdxW.hidden = true;
+        tabIdxW.type = "hidden";
+        tabIdxW.computeSize = () => [0, -4];
+        tabIdxW.options = tabIdxW.options || {};
+        tabIdxW.options.control_after_generate = "fixed";
+      }
       const jsonW = this.widgets?.find((w) => w.name === "prompt_json");
       if (jsonW) {
         jsonW.hidden = true;
@@ -392,7 +439,8 @@ app.registerExtension({
               this._showValidateMsg("err", result.error + tr("，请修正后再切换"));
               return;
             }
-            // 格式正确且编号无问题，更新数据
+            // 格式正确且编号无问题，更新数据（同步到当前项目）
+            this._tabs[this._activeTab].data = result.data;
             this._data = result.data;
             this._syncJson();
           }
@@ -407,9 +455,10 @@ app.registerExtension({
         this._renderContent();
       });
       toolbar.append(spacer, previewBtn);
+      const projectTabbar = makeEl("div", "mspe-projbar");
       const topTabbar = makeEl("div", "mspe-tabbar");
       const content = makeEl("div", "mspe-content");
-      root.append(toolbar, topTabbar, content);
+      root.append(toolbar, projectTabbar, topTabbar, content);
 
       const domWidget = this.addDOMWidget("mspe_panel", "div", root, {
         getMinHeight: () => 360,
@@ -439,7 +488,7 @@ app.registerExtension({
       this.size[0] = Math.max(440, this.size[0] || 0);
       this.size[1] = Math.max(400, this.size[1] || 0);
 
-      this._dom = { root, toolbar, previewBtn, topTabbar, content };
+      this._dom = { root, toolbar, previewBtn, projectTabbar, topTabbar, content };
 
       /* ---- 二次确认 ---- */
       this._confirm = (msg, onOk) => {
@@ -458,10 +507,121 @@ app.registerExtension({
         document.body.append(ov);
       };
 
-      /* ---- 同步 JSON ---- */
+      /* ---- 同步 JSON（序列化多项目结构） ---- */
       this._syncJson = () => {
         const w = this.widgets?.find((x) => x.name === "prompt_json");
-        if (w) w.value = JSON.stringify(this._data, null, 2);
+        if (w) {
+          const state = {
+            tabs: this._tabs.map((t) => ({ name: t.name, data: t.data })),
+            active: this._activeTab,
+          };
+          w.value = JSON.stringify(state, null, 2);
+        }
+      };
+
+      /* ---- 最外层项目 Tab 渲染与操作 ---- */
+      this._renderProjectTabs = () => {
+        const bar = this._dom.projectTabbar;
+        if (!bar) return;
+        bar.innerHTML = "";
+        this._tabs.forEach((t, idx) => {
+          const tab = makeEl("div", "mspe-proj-tab" + (idx === this._activeTab ? " active" : ""));
+          tab.title = tr("双击项目 Tab 标题可重命名");
+          const idxEl = makeEl("span", "mspe-proj-idx", String(idx + 1));
+          const nameEl = makeEl("span", "mspe-proj-name", t.name || tr("未命名项目"));
+          nameEl.style.flex = "1 1 auto";
+          nameEl.style.minWidth = "0";
+          const x = makeEl("span", "mspe-proj-x", "×");
+          x.title = tr("删除项目");
+          x.addEventListener("click", (e) => {
+            e.stopPropagation();
+            this._deleteProject(idx);
+          });
+          nameEl.addEventListener("dblclick", (e) => {
+            e.stopPropagation();
+            this._renameProject(idx, nameEl);
+          });
+          tab.addEventListener("click", () => this._switchProject(idx));
+          tab.append(idxEl, nameEl, x);
+          bar.append(tab);
+        });
+        const add = makeEl("div", "mspe-proj-add", "+");
+        add.title = tr("添加项目");
+        add.addEventListener("click", () => this._addProject());
+        bar.append(add);
+      };
+
+      this._switchProject = (idx) => {
+        if (idx === this._activeTab || idx < 0 || idx >= this._tabs.length) return;
+        this._activeTab = idx;
+        this._data = this._tabs[idx].data;
+        this._curModule = 0;
+        this._previewMode = false;
+        if (this._dom?.previewBtn) {
+          this._dom.previewBtn.classList.remove("active");
+          this._dom.previewBtn.textContent = tr("预览 JSON");
+        }
+        MODULES.forEach((m) => { if (m.type === "list_str") this._curItem[m.key] = 0; });
+        this._curShot = 0;
+        this._curMove = 0;
+        this._syncJson();
+        this._renderProjectTabs();
+        this._renderTopTabs();
+        this._renderContent();
+      };
+
+      this._addProject = () => {
+        if (this._tabs.length >= MAX_PROJECT_TABS) {
+          this._showValidateMsg("err", tr("已达最多 {n} 个项目上限", { n: MAX_PROJECT_TABS }));
+          return;
+        }
+        const n = this._tabs.length + 1;
+        this._tabs.push({ name: tr("项目 {n}", { n }), data: deepClone(DEFAULT_DATA) });
+        this._switchProject(this._tabs.length - 1);
+      };
+
+      this._deleteProject = (idx) => {
+        if (this._tabs.length <= 1) return; // 至少保留一个
+        const t = this._tabs[idx];
+        this._confirm(
+          tr("确定要删除第 {n} 个项目「{name}」吗？\n项目内所有模块与分镜将丢失且不可恢复。",
+             { n: idx + 1, name: t.name || tr("未命名项目") }),
+          () => {
+            this._tabs.splice(idx, 1);
+            if (this._activeTab >= this._tabs.length) this._activeTab = this._tabs.length - 1;
+            if (this._activeTab < 0) this._activeTab = 0;
+            this._data = this._tabs[this._activeTab].data;
+            this._curModule = 0;
+            MODULES.forEach((m) => { if (m.type === "list_str") this._curItem[m.key] = 0; });
+            this._curShot = 0;
+            this._curMove = 0;
+            this._syncJson();
+            this._renderProjectTabs();
+            this._renderTopTabs();
+            this._renderContent();
+          }
+        );
+      };
+
+      this._renameProject = (idx, nameEl) => {
+        const t = this._tabs[idx];
+        const input = makeEl("input", "mspe-proj-rename");
+        input.value = t.name || "";
+        input.placeholder = tr("输入项目名称…");
+        nameEl.replaceWith(input);
+        input.focus();
+        input.select();
+        const commit = () => {
+          const v = input.value.trim();
+          t.name = v || tr("未命名项目");
+          this._syncJson();
+          this._renderProjectTabs();
+        };
+        input.addEventListener("blur", commit);
+        input.addEventListener("keydown", (e) => {
+          if (e.key === "Enter") { e.preventDefault(); input.blur(); }
+          else if (e.key === "Escape") { input.value = t.name || ""; input.blur(); }
+        });
       };
 
       /* ---- JSON 校验（含分镜编号重复/顺序检查，编号问题等同格式错误） ---- */
@@ -587,6 +747,7 @@ app.registerExtension({
             if (!result.ok) {
               this._showValidateMsg("err", result.error);
             } else {
+              this._tabs[this._activeTab].data = result.data;
               this._data = result.data;
               this._syncJson();
               this._showValidateMsg("ok", tr("格式校验通过，数据已同步"));
@@ -883,46 +1044,76 @@ app.registerExtension({
         container.append(rowBgm);
       };
 
-      /* ---- 从隐藏 widget 加载数据 ---- */
+      /* ---- 从隐藏 widget 加载数据（多项目结构，兼容旧单 JSON 格式） ---- */
       this._load = () => {
         const jsonW = this.widgets?.find((x) => x.name === "prompt_json");
-        let data = {};
-        try { data = JSON.parse(jsonW?.value || "{}"); } catch (e) { data = {}; }
+        let raw = {};
+        try { raw = JSON.parse(jsonW?.value || "{}"); } catch (e) { raw = {}; }
 
-        const merged = deepClone(DEFAULT_DATA);
-        for (const m of MODULES) {
-          if (data[m.key] == null) continue;
-          if (m.type === "str") {
-            merged[m.key] = String(data[m.key]);
-          } else if (m.type === "list_str") {
-            if (Array.isArray(data[m.key])) {
-              merged[m.key] = data[m.key].map((v) => (v == null ? "" : String(v)));
-              if (merged[m.key].length === 0) merged[m.key] = [""];
+        // 解析为项目列表：新格式 {tabs:[{name,data}], active:N}；旧格式为单个 JSON 对象
+        let tabs, active;
+        if (raw && typeof raw === "object" && Array.isArray(raw.tabs) && raw.tabs.length > 0) {
+          tabs = raw.tabs.map((t) => {
+            if (t && typeof t === "object") {
+              return {
+                name: typeof t.name === "string" ? t.name : tr("未命名项目"),
+                data: t.data && typeof t.data === "object" ? t.data : {},
+              };
             }
-          } else if (m.type === "list_shot") {
-            if (Array.isArray(data[m.key])) {
-              merged[m.key] = data[m.key].map((s) => {
-                const shot = deepClone(DEFAULT_SHOT);
-                if (s && typeof s === "object") {
-                  SHOT_FIELDS.forEach((f) => {
-                    if (s[f.key] != null) {
-                      if (f.type === "int") shot[f.key] = parseInt(s[f.key], 10) || 1;
-                      else if (f.type === "list_str") {
-                        shot[f.key] = Array.isArray(s[f.key])
-                          ? s[f.key].map((v) => (v == null ? "" : String(v)))
-                          : [""];
+            return { name: tr("未命名项目"), data: {} };
+          });
+          active = (typeof raw.active === "number" && raw.active >= 0 && raw.active < tabs.length)
+            ? raw.active : 0;
+        } else {
+          // 旧格式迁移：单个提示词 JSON → 单项目
+          tabs = [{ name: tr("未命名项目"), data: raw && typeof raw === "object" ? raw : {} }];
+          active = 0;
+        }
+        // 上限保护
+        if (tabs.length > MAX_PROJECT_TABS) tabs = tabs.slice(0, MAX_PROJECT_TABS);
+        if (active >= tabs.length) active = tabs.length - 1;
+
+        // 规范化每个项目的 data
+        const normalizeData = (data) => {
+          const merged = deepClone(DEFAULT_DATA);
+          for (const m of MODULES) {
+            if (data[m.key] == null) continue;
+            if (m.type === "str") {
+              merged[m.key] = String(data[m.key]);
+            } else if (m.type === "list_str") {
+              if (Array.isArray(data[m.key])) {
+                merged[m.key] = data[m.key].map((v) => (v == null ? "" : String(v)));
+                if (merged[m.key].length === 0) merged[m.key] = [""];
+              }
+            } else if (m.type === "list_shot") {
+              if (Array.isArray(data[m.key])) {
+                merged[m.key] = data[m.key].map((s) => {
+                  const shot = deepClone(DEFAULT_SHOT);
+                  if (s && typeof s === "object") {
+                    SHOT_FIELDS.forEach((f) => {
+                      if (s[f.key] != null) {
+                        if (f.type === "int") shot[f.key] = parseInt(s[f.key], 10) || 1;
+                        else if (f.type === "list_str") {
+                          shot[f.key] = Array.isArray(s[f.key])
+                            ? s[f.key].map((v) => (v == null ? "" : String(v)))
+                            : [""];
+                        }
+                        else shot[f.key] = String(s[f.key]);
                       }
-                      else shot[f.key] = String(s[f.key]);
-                    }
-                  });
-                }
-                return shot;
-              });
-              if (merged[m.key].length === 0) merged[m.key] = [deepClone(DEFAULT_SHOT)];
+                    });
+                  }
+                  return shot;
+                });
+                if (merged[m.key].length === 0) merged[m.key] = [deepClone(DEFAULT_SHOT)];
+              }
             }
           }
-        }
-        this._data = merged;
+          return merged;
+        };
+
+        this._tabs = tabs.map((t) => ({ name: t.name, data: normalizeData(t.data) }));
+        this._activeTab = active;
+        this._data = this._tabs[active].data;
         this._curModule = 0;
         this._previewMode = false;
         if (this._dom?.previewBtn) {
@@ -932,6 +1123,7 @@ app.registerExtension({
         MODULES.forEach((m) => { if (m.type === "list_str") this._curItem[m.key] = 0; });
         this._curShot = 0;
         this._curMove = 0;
+        this._renderProjectTabs();
         this._renderTopTabs();
         this._renderContent();
       };
@@ -943,6 +1135,7 @@ app.registerExtension({
           this._dom.previewBtn.textContent = this._previewMode ? tr("返回编辑") : tr("预览 JSON");
           this._dom.previewBtn.title = tr("点击切换到 JSON 预览/编辑模式，再次点击返回可视化编辑");
         }
+        this._renderProjectTabs();
         this._renderTopTabs();
         this._renderContent();
       };
