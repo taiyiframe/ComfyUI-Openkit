@@ -148,13 +148,13 @@ class JsonExtractor:
                 "顶部自定义段落": ("STRING", {
                     "multiline": True,
                     "default": "",
-                    "display_name": "自定义段落（开头插入）",
+                    "display_name": "顶部自定义段落",
                     "tooltip": "自定义段落，插入在分镜序列 H3 六段标准提示词最开头（subject_definitions 之前）。留空则不插入。"
                 }),
                 "自定义段落": ("STRING", {
                     "multiline": True,
                     "default": DEFAULT_NEGATIVE,
-                    "display_name": "自定义段落（末尾追加）",
+                    "display_name": "底部自定义段落",
                     "tooltip": "自定义段落，追加在分镜序列 H3 六段标准提示词末尾（如 Negative 提示词）。留空则不追加。"
                 }),
             },

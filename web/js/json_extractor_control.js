@@ -15,6 +15,10 @@ OKT.addPairs([
   ["Index Control", "索引控制"],
   ["Controls how 「索引」 changes before each generation: randomize = random; fixed = fixed; increment = +1 each time; decrement = -1 each time.",
     "控制「索引」在每次生成前的变化方式：randomize=随机生成；fixed=固定不变；increment=每次+1；decrement=每次-1。"],
+  ["顶部自定义段落", "顶部自定义段落"],
+  ["底部自定义段落", "底部自定义段落"],
+  ["在此输入在提示词开头插入的自定义段落", "在此输入在提示词开头插入的自定义段落"],
+  ["在此输入在提示词末尾追加的自定义段落", "在此输入在提示词末尾追加的自定义段落"],
 ]);
 const tr = (t) => OKT.tr(t);
 
@@ -68,6 +72,27 @@ app.registerExtension({
             try { this.graph?.setDirtyCanvas?.(true, true); } catch (e) { /* ignore */ }
           };
         }
+
+        // 为顶部/底部自定义段落 textarea 设置 placeholder
+        const setCustomParaPlaceholder = () => {
+          try {
+            const topW = this.widgets?.find(w => w && w.name === "顶部自定义段落");
+            const botW = this.widgets?.find(w => w && w.name === "自定义段落");
+            const setPH = (w, ph) => {
+              if (!w) return;
+              const ta = w.inputEl || w.element;
+              if (ta && ta.setAttribute) {
+                ta.setAttribute("placeholder", ph);
+              }
+            };
+            setPH(topW, tr("在此输入在提示词开头插入的自定义段落"));
+            setPH(botW, tr("在此输入在提示词末尾追加的自定义段落"));
+          } catch (e) { /* ignore */ }
+        };
+        setCustomParaPlaceholder();
+        // widget 的 inputEl 可能在首次绘制后才创建，延迟再设一次
+        setTimeout(setCustomParaPlaceholder, 100);
+        setTimeout(setCustomParaPlaceholder, 500);
       } catch (e) {
         console.error("Openkit JsonExtractor index-control:", e);
       }
