@@ -32,7 +32,7 @@ export const PIC_CAT_PRIORITY = { "关键帧": 0, "角色": 1, "道具": 2, "场
 // working across the whole wall. Audio/video stay fully rendered (their rows
 // are cheap and usually few).
 const PIC_WINDOW_THRESHOLD = 24;
-const PIC_WIN_MIN_W = 118;   // must match .mml-pics grid-template-columns minmax()
+const PIC_WIN_MIN_W = 150;   // must match .mml-pics grid-template-columns minmax()
 const PIC_WIN_GAP = 6;       // must match .mml-pics gap
 const PIC_WIN_OVERSCAN = 2;  // extra rows kept above/below the viewport
 
@@ -570,10 +570,11 @@ const CSS = `
   transition:border-color var(--ok-transition), background var(--ok-transition);}
 .mml-miniadd:hover{border-color:var(--ok-accent-2);background:#1b2230;}
 
-/* 图片区：无数量上限，自适应列数（auto-fill），瓦片墙滚动渲染。
+/* 图片区：无数量上限，自适应列数（auto-fit：空轨道折叠，槽位随面板宽度拉伸
+   放大铺满，不再右侧留白），瓦片墙滚动渲染。
    槽位长宽比 16/9（与参考帧 2730×1536 一致），contain 完整显示不裁切。 */
 .mml-pics{flex:1;min-height:0;overflow-y:auto;display:grid;
-  grid-template-columns:repeat(auto-fill,minmax(118px,1fr));
+  grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
   grid-auto-rows:auto;gap:6px;align-content:start;padding-right:2px;
   overscroll-behavior:contain;scrollbar-width:thin;}
 /* 窗口化模式（图片数超阈值）：滚动容器 + 绝对定位行网格。
