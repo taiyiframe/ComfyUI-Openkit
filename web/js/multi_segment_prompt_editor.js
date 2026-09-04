@@ -12,8 +12,62 @@
  * 原生 widget（prompt_json）被隐藏，值通过隐藏 widget 序列化。
  */
 import { app } from "../../../scripts/app.js";
+import { OKT } from "./openkit_i18n.js";
 
 const NODE_NAME = "MultiSegmentPromptEditor";
+
+// 本文件只翻译 UI 操作文案（按钮/提示/占位符/校验错误/默认名）；
+// JSON key 与 value（整体风格/角色档案/…/编号/类型/文戏/武戏等）为数据契约，绝不翻译。
+const LANG_PAIRS = [
+  ["Item {n}", "条目 {n}"],
+  ["Click to switch; double-click to rename", "点击切换；双击编辑标题"],
+  ["Delete this item", "删除该条目"],
+  ["Add one", "添加一条"],
+  ["Preview JSON", "预览 JSON"],
+  ["Back to editor", "返回编辑"],
+  ["Click to switch to JSON preview/edit mode; click again to return to visual editing",
+    "点击切换到 JSON 预览/编辑模式，再次点击返回可视化编辑"],
+  [", please fix it before switching back", "，请修正后再切换"],
+  ["Cancel", "取消"],
+  ["Confirm Delete", "确认删除"],
+  ["JSON format error: {msg}", "JSON 格式错误：{msg}"],
+  ["Root must be an object", "根节点必须是对象"],
+  ["Shot #{n} lacks a valid number (编号)", "第 {n} 个分镜缺少有效编号"],
+  ["Shot #{n} type format error (should be 「文戏：N秒」 or 「武戏：N秒」)",
+    "第 {n} 个分镜类型格式错误（应为「文戏：N秒」或「武戏：N秒」）"],
+  ["Shot #{n} duration {dur} out of range (must be 5-12s)",
+    "第 {n} 个分镜秒数 {dur} 超出范围（必须为 5-12 秒）"],
+  ["Shot #{n} is missing the type field", "第 {n} 个分镜缺少类型字段"],
+  ["Duplicate shot numbers: {list}", "分镜编号重复：{list}"],
+  ["Shot numbers not ascending: shot #{a} ({x}) ≥ shot #{b} ({y})",
+    "分镜编号未按从小到大排列：第 {a} 个分镜编号 {x} ≥ 第 {b} 个分镜编号 {y}"],
+  ["Shot validation failed: {detail}. Please fix it before switching back.",
+    "分镜校验未通过：{detail}。请修正后再切换。"],
+  ["Validate", "校验格式"],
+  ["Validate whether the current JSON format is correct", "校验当前 JSON 格式是否正确"],
+  ["Paste or edit the full JSON here…", "在此粘贴或编辑完整 JSON…"],
+  ["Validation passed, data synced", "格式校验通过，数据已同步"],
+  ["Enter {key} here…", "在此输入{key}…"],
+  ["empty", "空"],
+  ["Delete item #{n} ({label}) in 「{key}」? This cannot be undone.",
+    "确定要删除「{key}」第 {n} 条（{label}）吗？\n删除后内容将丢失且不可恢复。"],
+  ["Enter content of item #{n} ({key}) here…", "在此输入第 {n} 条{key}内容…"],
+  ["untitled", "未命名"],
+  ["Delete shot #{n} 「{title}」? All fields (including camera moves) will be lost and cannot be undone.",
+    "确定要删除第 {n} 个分镜「{title}」吗？\n删除后所有字段（含运镜）将丢失且不可恢复。"],
+  ["Shot {num}", "分镜{num}"],
+  ["Number is auto-generated, not editable", "编号自动生成，不可编辑"],
+  ["Enter shot title…", "输入分镜标题…"],
+  ["Enter shot summary…", "输入分镜摘要…"],
+  ["Camera moves (edit one by one)", "运镜（逐条编辑）"],
+  ["Delete camera move #{n} ({label})? This cannot be undone.",
+    "确定要删除第 {n} 条运镜（{label}）吗？\n删除后内容将丢失且不可恢复。"],
+  ["Enter description of camera move #{n}…", "输入第 {n} 条运镜描述…"],
+  ["Enter ambient sound description…", "输入环境音描述…"],
+  ["Enter BGM description…", "输入BGM描述…"],
+];
+OKT.addPairs(LANG_PAIRS);
+const tr = (t, p) => OKT.tr(t, p);
 
 const MODULES = [
   { key: "整体风格", type: "str" },
@@ -228,9 +282,9 @@ function buildTabBar(opts) {
     const tab = makeEl("div", "mspe-tab" + (i === opts.curIdx ? " active" : ""));
     const idxVal = typeof opts.getIdx === "function" ? opts.getIdx(item, i) : (i + 1);
     const idxTag = makeEl("span", "mspe-tab-idx", "#" + idxVal);
-    const nameEl = makeEl("span", "mspe-tab-name", opts.getLabel(item, i) || ("条目 " + (i + 1)));
+    const nameEl = makeEl("span", "mspe-tab-name", opts.getLabel(item, i) || tr("条目 {n}", { n: i + 1 }));
     tab.append(idxTag, nameEl);
-    tab.title = "点击切换；双击编辑标题";
+    tab.title = tr("点击切换；双击编辑标题");
     tab.addEventListener("click", (ev) => {
       ev.stopPropagation();
       opts.onSelect(i);
@@ -266,7 +320,7 @@ function buildTabBar(opts) {
     }
     if (opts.showDelete !== false) {
       const x = makeEl("span", "mspe-tab-x", "×");
-      x.title = "删除该条目";
+      x.title = tr("删除该条目");
       x.addEventListener("click", (ev) => {
         ev.stopPropagation();
         opts.onDelete(i);
@@ -277,7 +331,7 @@ function buildTabBar(opts) {
   });
   if (opts.showAdd !== false) {
     const add = makeEl("div", "mspe-tab-add", "+");
-    add.title = "添加一条";
+    add.title = tr("添加一条");
     add.addEventListener("click", () => opts.onAdd());
     bar.append(add);
   }
@@ -322,8 +376,8 @@ app.registerExtension({
       const toolbar = makeEl("div", "mspe-toolbar");
       const spacer = makeEl("div");
       spacer.style.flex = "1";
-      const previewBtn = makeEl("button", "mspe-preview-btn", "预览 JSON");
-      previewBtn.title = "点击切换到 JSON 预览/编辑模式，再次点击返回可视化编辑";
+      const previewBtn = makeEl("button", "mspe-preview-btn", tr("预览 JSON"));
+      previewBtn.title = tr("点击切换到 JSON 预览/编辑模式，再次点击返回可视化编辑");
       previewBtn.addEventListener("click", () => {
         if (this._previewMode) {
           // 从预览切回编辑：先校验 JSON 格式
@@ -331,7 +385,7 @@ app.registerExtension({
           if (ta) {
             const result = this._validateJson(ta.value);
             if (!result.ok) {
-              this._showValidateMsg("err", result.error + "，请修正后再切换");
+              this._showValidateMsg("err", result.error + tr("，请修正后再切换"));
               return;
             }
             // 格式正确且编号无问题，更新数据
@@ -340,11 +394,11 @@ app.registerExtension({
           }
           this._previewMode = false;
           previewBtn.classList.remove("active");
-          previewBtn.textContent = "预览 JSON";
+          previewBtn.textContent = tr("预览 JSON");
         } else {
           this._previewMode = true;
           previewBtn.classList.add("active");
-          previewBtn.textContent = "返回编辑";
+          previewBtn.textContent = tr("返回编辑");
         }
         this._renderContent();
       });
@@ -376,8 +430,8 @@ app.registerExtension({
         const box = makeEl("div", "mspe-modal-box");
         const m = makeEl("div", "mspe-modal-msg", msg);
         const btns = makeEl("div", "mspe-modal-btns");
-        const cancel = makeEl("button", "mspe-modal-btn", "取消");
-        const ok = makeEl("button", "mspe-modal-btn ok", "确认删除");
+        const cancel = makeEl("button", "mspe-modal-btn", tr("取消"));
+        const ok = makeEl("button", "mspe-modal-btn ok", tr("确认删除"));
         const close = () => ov.remove();
         cancel.addEventListener("click", close);
         ok.addEventListener("click", () => { close(); onOk(); });
@@ -400,10 +454,10 @@ app.registerExtension({
         try {
           data = JSON.parse(text);
         } catch (e) {
-          return { ok: false, error: "JSON 格式错误：" + e.message };
+          return { ok: false, error: tr("JSON 格式错误：{msg}", { msg: e.message }) };
         }
         if (typeof data !== "object" || data === null || Array.isArray(data)) {
-          return { ok: false, error: "根节点必须是对象" };
+          return { ok: false, error: tr("根节点必须是对象") };
         }
 
         // 2. 分镜序列检查（编号重复/顺序/类型秒数范围，问题等同格式错误）
@@ -415,7 +469,7 @@ app.registerExtension({
             // 编号检查
             const n = s ? parseInt(s["编号"], 10) : NaN;
             if (Number.isNaN(n)) {
-              problems.push("第 " + (i + 1) + " 个分镜缺少有效编号");
+              problems.push(tr("第 {n} 个分镜缺少有效编号", { n: i + 1 }));
             } else {
               nums.push({ idx: i, num: n });
             }
@@ -423,13 +477,13 @@ app.registerExtension({
             if (s && typeof s["类型"] === "string") {
               const parsed = parseShotType(s["类型"]);
               if (parsed.category !== "文戏" && parsed.category !== "武戏") {
-                problems.push("第 " + (i + 1) + " 个分镜类型格式错误（应为「文戏：N秒」或「武戏：N秒」）");
+                problems.push(tr("第 {n} 个分镜类型格式错误（应为「文戏：N秒」或「武戏：N秒」）", { n: i + 1 }));
               } else if (parsed.duration < 5 || parsed.duration > 12) {
-                problems.push("第 " + (i + 1) + " 个分镜秒数 " + parsed.duration +
-                  " 超出范围（必须为 5-12 秒）");
+                problems.push(tr("第 {n} 个分镜秒数 {dur} 超出范围（必须为 5-12 秒）",
+                  { n: i + 1, dur: parsed.duration }));
               }
             } else if (s) {
-              problems.push("第 " + (i + 1) + " 个分镜缺少类型字段");
+              problems.push(tr("第 {n} 个分镜缺少类型字段", { n: i + 1 }));
             }
           });
 
@@ -441,21 +495,21 @@ app.registerExtension({
             seen[item.num] = true;
           });
           if (dups.length > 0) {
-            problems.push("分镜编号重复：" + dups.join("、"));
+            problems.push(tr("分镜编号重复：{list}", { list: dups.join("、") }));
           }
 
           // 编号顺序检查
           for (let i = 1; i < nums.length; i++) {
             if (nums[i].num <= nums[i - 1].num) {
-              problems.push("分镜编号未按从小到大排列：第 " + (nums[i - 1].idx + 1) +
-                " 个分镜编号 " + nums[i - 1].num + " ≥ 第 " + (nums[i].idx + 1) +
-                " 个分镜编号 " + nums[i].num);
+              problems.push(tr("分镜编号未按从小到大排列：第 {a} 个分镜编号 {x} ≥ 第 {b} 个分镜编号 {y}",
+                { a: nums[i - 1].idx + 1, x: nums[i - 1].num, b: nums[i].idx + 1, y: nums[i].num }));
               break;
             }
           }
 
           if (problems.length > 0) {
-            return { ok: false, error: "分镜校验未通过：" + problems.join("；") + "。请修正后再切换。" };
+            return { ok: false, error: tr("分镜校验未通过：{detail}。请修正后再切换。",
+              { detail: problems.join("；") }) };
           }
         }
 
@@ -502,15 +556,15 @@ app.registerExtension({
           this._dom.topTabbar.style.display = "none";
           // 工具栏：校验按钮 + 提示信息
           const ptoolbar = makeEl("div", "mspe-preview-toolbar");
-          const validateBtn = makeEl("button", "mspe-validate-btn", "校验格式");
-          validateBtn.title = "校验当前 JSON 格式是否正确";
+          const validateBtn = makeEl("button", "mspe-validate-btn", tr("校验格式"));
+          validateBtn.title = tr("校验当前 JSON 格式是否正确");
           const msgEl = makeEl("span", "mspe-validate-msg", "");
           ptoolbar.append(validateBtn, msgEl);
           // 可编辑文本框
           const ta = makeEl("textarea", "mspe-preview-textarea");
           ta.spellcheck = false;
           ta.value = JSON.stringify(this._data, null, 2);
-          ta.placeholder = "在此粘贴或编辑完整 JSON…";
+          ta.placeholder = tr("在此粘贴或编辑完整 JSON…");
           validateBtn.addEventListener("click", () => {
             const result = this._validateJson(ta.value);
             if (!result.ok) {
@@ -518,7 +572,7 @@ app.registerExtension({
             } else {
               this._data = result.data;
               this._syncJson();
-              this._showValidateMsg("ok", "格式校验通过，数据已同步");
+              this._showValidateMsg("ok", tr("格式校验通过，数据已同步"));
             }
           });
           c.append(ptoolbar, ta);
@@ -544,7 +598,7 @@ app.registerExtension({
         const label = makeEl("div", "mspe-field-label", key);
         const ta = makeEl("textarea", "mspe-textarea fit");
         ta.value = value || "";
-        ta.placeholder = "在此输入" + key + "…";
+        ta.placeholder = tr("在此输入{key}…", { key });
         ta.spellcheck = false;
         ta.addEventListener("input", () => {
           this._data[key] = ta.value;
@@ -561,7 +615,7 @@ app.registerExtension({
         const tabbar = buildTabBar({
           items: list,
           curIdx: Math.min(curIdx, list.length - 1),
-          getLabel: (item) => truncate(item, 16) || "空",
+          getLabel: (item) => truncate(item, 16) || tr("空"),
           onSelect: (i) => {
             this._curItem[key] = i;
             this._renderContent();
@@ -574,9 +628,10 @@ app.registerExtension({
           },
           onDelete: (i) => {
             if (this._data[key].length <= 1) return;
-            const label = truncate(this._data[key][i], 20) || "空";
+            const label = truncate(this._data[key][i], 20) || tr("空");
             this._confirm(
-              "确定要删除「" + key + "」第 " + (i + 1) + " 条（" + label + "）吗？\n删除后内容将丢失且不可恢复。",
+              tr("确定要删除「{key}」第 {n} 条（{label}）吗？\n删除后内容将丢失且不可恢复。",
+                { key, n: i + 1, label }),
               () => {
                 this._data[key].splice(i, 1);
                 if (this._curItem[key] >= this._data[key].length) {
@@ -600,14 +655,14 @@ app.registerExtension({
         if (list.length > 0) {
           const ta = makeEl("textarea", "mspe-textarea fit");
           ta.value = list[idx] || "";
-          ta.placeholder = "在此输入第 " + (idx + 1) + " 条" + key + "内容…";
+          ta.placeholder = tr("在此输入第 {n} 条{key}内容…", { n: idx + 1, key });
           ta.spellcheck = false;
           ta.addEventListener("input", () => {
             this._data[key][idx] = ta.value;
             this._syncJson();
             // 更新 Tab 标签
             const nameEl = tabbar.children[idx]?.querySelector(".mspe-tab-name");
-            if (nameEl) nameEl.textContent = truncate(ta.value, 16) || "空";
+            if (nameEl) nameEl.textContent = truncate(ta.value, 16) || tr("空");
           });
           container.append(ta);
         }
@@ -622,7 +677,7 @@ app.registerExtension({
           items: shots,
           curIdx: curIdx,
           getIdx: (shot) => shot["编号"] || (curIdx + 1),
-          getLabel: (shot) => truncate(shot["标题"], 14) || "未命名",
+          getLabel: (shot) => truncate(shot["标题"], 14) || tr("未命名"),
           onSelect: (i) => {
             this._curShot = i;
             this._curMove = 0;
@@ -640,9 +695,10 @@ app.registerExtension({
           },
           onDelete: (i) => {
             if (shots.length <= 1) return;
-            const title = truncate(shots[i]["标题"], 20) || "未命名";
+            const title = truncate(shots[i]["标题"], 20) || tr("未命名");
             this._confirm(
-              "确定要删除第 " + (shots[i]["编号"] || (i + 1)) + " 个分镜「" + title + "」吗？\n删除后所有字段（含运镜）将丢失且不可恢复。",
+              tr("确定要删除第 {n} 个分镜「{title}」吗？\n删除后所有字段（含运镜）将丢失且不可恢复。",
+                { n: shots[i]["编号"] || (i + 1), title }),
               () => {
                 shots.splice(i, 1);
                 if (this._curShot >= shots.length) this._curShot = shots.length - 1;
@@ -652,7 +708,7 @@ app.registerExtension({
               });
           },
           onRename: (i, newName) => {
-            shots[i]["标题"] = newName || ("分镜" + (shots[i]["编号"] || (i + 1)));
+            shots[i]["标题"] = newName || tr("分镜{num}", { num: shots[i]["编号"] || (i + 1) });
             this._syncJson();
             this._renderContent();
           },
@@ -664,15 +720,15 @@ app.registerExtension({
 
         // 编号（只读，与 Tab 标题编号一致，自动显示不可编辑）
         const rowNum = makeEl("div", "mspe-field-row inline");
-        rowNum.append(makeEl("div", "mspe-field-label", "编号"));
+        rowNum.append(makeEl("div", "mspe-field-label", tr("编号")));
         const numDisplay = makeEl("span", "mspe-num-display", String(shot["编号"] ?? (curIdx + 1)));
-        numDisplay.title = "编号自动生成，不可编辑";
+        numDisplay.title = tr("编号自动生成，不可编辑");
         rowNum.append(numDisplay);
         container.append(rowNum);
 
         // 类型：文戏/武戏 下拉 + 秒数 5-12 下拉
         const rowType = makeEl("div", "mspe-field-row inline");
-        rowType.append(makeEl("div", "mspe-field-label", "类型"));
+        rowType.append(makeEl("div", "mspe-field-label", tr("类型")));
         const typeWrap = makeEl("div", "mspe-shot-type-row");
         const parsed = parseShotType(shot["类型"]);
         const selCat = makeEl("select", "mspe-select");
@@ -702,25 +758,25 @@ app.registerExtension({
 
         // 标题
         const rowTitle = makeEl("div", "mspe-field-row");
-        rowTitle.append(makeEl("div", "mspe-field-label", "标题"));
+        rowTitle.append(makeEl("div", "mspe-field-label", tr("标题")));
         const titleInp = makeEl("input", "mspe-textinput");
         titleInp.value = shot["标题"] || "";
-        titleInp.placeholder = "输入分镜标题…";
+        titleInp.placeholder = tr("输入分镜标题…");
         titleInp.addEventListener("input", () => {
           shot["标题"] = titleInp.value;
           this._syncJson();
           const nameEl = tabbar.children[curIdx]?.querySelector(".mspe-tab-name");
-          if (nameEl) nameEl.textContent = truncate(titleInp.value, 14) || "未命名";
+          if (nameEl) nameEl.textContent = truncate(titleInp.value, 14) || tr("未命名");
         });
         rowTitle.append(titleInp);
         container.append(rowTitle);
 
         // 摘要
         const rowSum = makeEl("div", "mspe-field-row");
-        rowSum.append(makeEl("div", "mspe-field-label", "摘要"));
+        rowSum.append(makeEl("div", "mspe-field-label", tr("摘要")));
         const sumTa = makeEl("textarea", "mspe-textarea");
         sumTa.value = shot["摘要"] || "";
-        sumTa.placeholder = "输入分镜摘要…";
+        sumTa.placeholder = tr("输入分镜摘要…");
         sumTa.spellcheck = false;
         sumTa.style.minHeight = "80px";
         sumTa.addEventListener("input", () => { shot["摘要"] = sumTa.value; this._syncJson(); });
@@ -728,7 +784,7 @@ app.registerExtension({
         container.append(rowSum);
 
         // 运镜：三级子 Tab
-        container.append(makeEl("div", "mspe-section-label", "运镜（逐条编辑）"));
+        container.append(makeEl("div", "mspe-section-label", tr("运镜（逐条编辑）")));
         const moves = shot["运镜"] || [];
         if (!Array.isArray(moves) || moves.length === 0) {
           shot["运镜"] = [""];
@@ -750,9 +806,10 @@ app.registerExtension({
           },
           onDelete: (i) => {
             if (shot["运镜"].length <= 1) return;
-            const label = truncate(shot["运镜"][i], 20) || "空";
+            const label = truncate(shot["运镜"][i], 20) || tr("空");
             this._confirm(
-              "确定要删除第 " + (i + 1) + " 条运镜（" + label + "）吗？\n删除后内容将丢失且不可恢复。",
+              tr("确定要删除第 {n} 条运镜（{label}）吗？\n删除后内容将丢失且不可恢复。",
+                { n: i + 1, label }),
               () => {
                 shot["运镜"].splice(i, 1);
                 if (this._curMove >= shot["运镜"].length) {
@@ -773,23 +830,23 @@ app.registerExtension({
         container.append(moveBar);
         const moveTa = makeEl("textarea", "mspe-textarea");
         moveTa.value = shot["运镜"][moveCur] || "";
-        moveTa.placeholder = "输入第 " + (moveCur + 1) + " 条运镜描述…";
+        moveTa.placeholder = tr("输入第 {n} 条运镜描述…", { n: moveCur + 1 });
         moveTa.spellcheck = false;
         moveTa.style.minHeight = "100px";
         moveTa.addEventListener("input", () => {
           shot["运镜"][moveCur] = moveTa.value;
           this._syncJson();
           const nameEl = moveBar.children[moveCur]?.querySelector(".mspe-tab-name");
-          if (nameEl) nameEl.textContent = truncate(moveTa.value, 14) || "空";
+          if (nameEl) nameEl.textContent = truncate(moveTa.value, 14) || tr("空");
         });
         container.append(moveTa);
 
         // 环境音
         const rowEnv = makeEl("div", "mspe-field-row");
-        rowEnv.append(makeEl("div", "mspe-field-label", "环境音"));
+        rowEnv.append(makeEl("div", "mspe-field-label", tr("环境音")));
         const envTa = makeEl("textarea", "mspe-textarea");
         envTa.value = shot["环境音"] || "";
-        envTa.placeholder = "输入环境音描述…";
+        envTa.placeholder = tr("输入环境音描述…");
         envTa.spellcheck = false;
         envTa.style.minHeight = "60px";
         envTa.addEventListener("input", () => { shot["环境音"] = envTa.value; this._syncJson(); });
@@ -798,10 +855,10 @@ app.registerExtension({
 
         // BGM
         const rowBgm = makeEl("div", "mspe-field-row");
-        rowBgm.append(makeEl("div", "mspe-field-label", "BGM"));
+        rowBgm.append(makeEl("div", "mspe-field-label", tr("BGM")));
         const bgmTa = makeEl("textarea", "mspe-textarea");
         bgmTa.value = shot["BGM"] || "";
-        bgmTa.placeholder = "输入BGM描述…";
+        bgmTa.placeholder = tr("输入BGM描述…");
         bgmTa.spellcheck = false;
         bgmTa.style.minHeight = "50px";
         bgmTa.addEventListener("input", () => { shot["BGM"] = bgmTa.value; this._syncJson(); });
@@ -853,7 +910,7 @@ app.registerExtension({
         this._previewMode = false;
         if (this._dom?.previewBtn) {
           this._dom.previewBtn.classList.remove("active");
-          this._dom.previewBtn.textContent = "预览 JSON";
+          this._dom.previewBtn.textContent = tr("预览 JSON");
         }
         MODULES.forEach((m) => { if (m.type === "list_str") this._curItem[m.key] = 0; });
         this._curShot = 0;
@@ -863,6 +920,15 @@ app.registerExtension({
       };
 
       this._load();
+      // 语言切换时：重设预览按钮文案并整体重渲染（数据契约内容不翻译）。
+      this._mspeLocalize = () => {
+        if (this._dom?.previewBtn) {
+          this._dom.previewBtn.textContent = this._previewMode ? tr("返回编辑") : tr("预览 JSON");
+          this._dom.previewBtn.title = tr("点击切换到 JSON 预览/编辑模式，再次点击返回可视化编辑");
+        }
+        this._renderTopTabs();
+        this._renderContent();
+      };
       return r;
     };
 
@@ -875,4 +941,15 @@ app.registerExtension({
       return r;
     };
   },
+});
+
+// 全局语言切换联动：切换语言后刷新所有 MultiSegmentPromptEditor 节点。
+window.addEventListener("openkit:langchange", () => {
+  try {
+    (app.graph?._nodes || []).forEach((n) => {
+      if (n?.type !== NODE_NAME) return;
+      if (typeof n._mspeLocalize === "function") n._mspeLocalize();
+    });
+    OKT.applyNodeTitles();
+  } catch (e) { /* one node failing must not stop the rest */ }
 });

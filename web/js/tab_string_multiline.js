@@ -14,9 +14,12 @@
  * Tab索引 保存当前输出索引；queue 前（beforeQueued）统一同步确保后端拿到最新值。
  */
 import { app } from "../../../scripts/app.js";
+import { OKT } from "./openkit_i18n.js";
 
 const NODE_NAME = "TabStringMultiline";
 const MAX_TAB_COUNT = 64;
+// 本文件全部静态 UI 文案统一走 OKT.tr（用户输入 / 自动生成的 Tab 名不翻译）。
+const tr = (t) => OKT.tr(t);
 
 const CSS = `
 .tsm-root{display:flex;flex-direction:column;gap:6px;width:100%;height:100%;
@@ -86,7 +89,7 @@ function buildRoot(node) {
   top.className = "tsm-top";
   const label = document.createElement("span");
   label.className = "tsm-toplabel";
-  label.textContent = "Tab索引";
+  label.textContent = tr("Tab索引");
   const input = document.createElement("input");
   input.type = "number";
   input.min = "0";
@@ -94,11 +97,11 @@ function buildRoot(node) {
   input.step = "1";
   input.value = "0";
   input.className = "tsm-idx";
-  input.title = "决定节点最终输出哪个 Tab 页的内容，索引从 0 开始";
+  input.title = tr("决定节点最终输出哪个 Tab 页的内容，索引从 0 开始");
   const linkBtn = document.createElement("button");
   linkBtn.className = "tsm-btn";
-  linkBtn.textContent = "联动切换";
-  linkBtn.title = "修改 Tab 索引后点击，下方 Tab 页自动切换到对应索引的页";
+  linkBtn.textContent = tr("联动切换");
+  linkBtn.title = tr("修改 Tab 索引后点击，下方 Tab 页自动切换到对应索引的页");
   linkBtn.addEventListener("click", () => {
     let v = parseInt(input.value, 10);
     if (Number.isNaN(v)) v = 0;
@@ -126,7 +129,7 @@ function buildRoot(node) {
   const ta = document.createElement("textarea");
   ta.className = "tsm-text";
   ta.spellcheck = false;
-  ta.placeholder = "在此输入当前 Tab 页的多行文本…";
+  ta.placeholder = tr("在此输入当前 Tab 页的多行文本…");
   ta.addEventListener("input", () => {
     node._tabs[node._tsmCurTab] = ta.value;
     node._tsmSyncContent();
@@ -277,10 +280,10 @@ app.registerExtension({
         btns.className = "tsm-modal-btns";
         const cancel = document.createElement("button");
         cancel.className = "tsm-btn tsm-modal-cancel";
-        cancel.textContent = "取消";
+        cancel.textContent = tr("取消");
         const ok = document.createElement("button");
         ok.className = "tsm-btn tsm-modal-ok";
-        ok.textContent = "确认关闭";
+        ok.textContent = tr("确认关闭");
         const close = () => ov.remove();
         cancel.addEventListener("click", close);
         ok.addEventListener("click", () => { close(); onOk(); });
@@ -295,7 +298,7 @@ app.registerExtension({
         if (!this._tabs || this._tabs.length <= 1) return;
         const name = this._names[i] || ("Tab " + i);
         this._tsmConfirm(
-          "确定要关闭 Tab「" + name + "」吗？\n关闭后该页内容将丢失，且不可恢复。",
+          tr("确定要关闭 Tab「{name}」吗？\n关闭后该页内容将丢失，且不可恢复。", { name }),
           () => {
             this._tabs.splice(i, 1);
             this._names.splice(i, 1);
@@ -325,7 +328,7 @@ app.registerExtension({
           nameEl.textContent = this._names[i] || ("Tab " + i);
           t.appendChild(nameEl);
           t.dataset.idx = String(i);
-          t.title = "点击切换该页（联动输出）；双击可编辑标题";
+          t.title = tr("点击切换该页（联动输出）；双击可编辑标题");
           t.addEventListener("click", (ev) => {
             ev.stopPropagation();
             this._tsmOnTabClick(i);
@@ -338,7 +341,7 @@ app.registerExtension({
           const x = document.createElement("span");
           x.className = "tsm-tab-x";
           x.textContent = "×";
-          x.title = "关闭该 Tab 页（有内容会先确认）";
+          x.title = tr("关闭该 Tab 页（有内容会先确认）");
           x.addEventListener("click", (ev) => {
             ev.stopPropagation();
             this._tsmCloseTab(i);
@@ -350,7 +353,7 @@ app.registerExtension({
         const add = document.createElement("div");
         add.className = "tsm-tab tsm-add";
         add.textContent = "+";
-        add.title = "新增一个 Tab 页";
+        add.title = tr("新增一个 Tab 页");
         add.addEventListener("click", (ev) => {
           ev.stopPropagation();
           this._tsmAddTab();
@@ -403,6 +406,20 @@ app.registerExtension({
         this._tsmCurTab = idx;
         this._tsmRefresh();
       };
+      // 语言切换时重设本节点全部静态文案并重建 Tab 栏（用户数据不翻译）。
+      this._tsmLocalize = () => {
+        const dom = this._tsmDom;
+        if (!dom) return;
+        const topKids = dom.top?.children || [];
+        if (topKids[0]) topKids[0].textContent = tr("Tab索引");
+        dom.input.title = tr("决定节点最终输出哪个 Tab 页的内容，索引从 0 开始");
+        if (topKids[2]) {
+          topKids[2].textContent = tr("联动切换");
+          topKids[2].title = tr("修改 Tab 索引后点击，下方 Tab 页自动切换到对应索引的页");
+        }
+        dom.ta.placeholder = tr("在此输入当前 Tab 页的多行文本…");
+        this._tsmRefresh();
+      };
       this._tsmLoad();
       return r;
     };
@@ -416,4 +433,15 @@ app.registerExtension({
       return r;
     };
   },
+});
+
+// 全局语言切换联动：切换语言后刷新所有 TabStringMultiline 节点。
+window.addEventListener("openkit:langchange", () => {
+  try {
+    (app.graph?._nodes || []).forEach((n) => {
+      if (n?.type !== NODE_NAME) return;
+      if (typeof n._tsmLocalize === "function") n._tsmLocalize();
+    });
+    OKT.applyNodeTitles();
+  } catch (e) { /* one node failing must not stop the rest */ }
 });

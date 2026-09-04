@@ -13,6 +13,7 @@ Open, standardized ComfyUI utility node collection. No black-box encapsulation, 
 - **Subject reference tag replacement** — Replace entity names with `<Subject N>` tags across all prompt sections
 - **Multi-tab media loading** — Up to 32 tabs of reference bundles (pictures/videos/audios) with trim, crop, soundtracks, presets
 - **Multi-segment prompt visual editor** — Edit complex H3 JSON through hierarchical tabs, no raw JSON exposure
+- **Full Chinese/English bilingual UI** — One-click language switch on every node (persisted), all static UI text localizes; JSON keys/values and your data are never touched
 - **Standard ComfyUI plugin structure** — Follows official conventions, easy to install and extend
 - **Fully documented** — Every input, output, and internal logic is explained
 
@@ -21,6 +22,7 @@ Open, standardized ComfyUI utility node collection. No black-box encapsulation, 
 - **主体引用标签置换** — 在所有提示词段落中将实体名替换为 `<Subject N>` 标签
 - **多 Tab 素材加载** — 最多 32 个 Tab 页参考素材集（图片/视频/音频），支持裁剪、剪辑、音轨、预设
 - **多段提示词可视化编辑** — 通过层级化 Tab 编辑复杂 H3 JSON，无需接触原始 JSON
+- **全插件中英双语** — 每个节点一键切换语言（自动记忆），全部静态 UI 文案同步本地化；JSON 键/值与用户数据绝不翻译
 - **标准 ComfyUI 插件结构** — 遵循官方规范，易于安装与扩展
 - **完整文档** — 每个输入、输出及内部逻辑均有说明
 
@@ -239,8 +241,10 @@ ComfyUI-Openkit/
 │   └── media_routes.py      # Upload/probe/preset HTTP routes / 上传/探测/预设服务路由
 ├── web/
 │   └── js/
+│       ├── openkit_i18n.js    # Unified EN/CN i18n module / 统一中英双语模块
 │       ├── multiframe_ref.js  # Frontend dynamic input expansion / 前端动态输入扩展
 │       ├── media_loader.js    # Media loader panel / 素材加载面板
+│       ├── json_extractor_control.js  # Index-control dropdown i18n / 索引控制下拉本地化
 │       ├── tab_string_multiline.js  # Multi-tab string editor / 多Tab字符串编辑器
 │       └── multi_segment_prompt_editor.js  # Visual prompt editor / 可视化提示词编辑器
 ├── tests/

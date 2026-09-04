@@ -8,6 +8,7 @@
  */
 import { app } from "../../../scripts/app.js";
 import { api } from "../../../scripts/api.js";
+import { OKT } from "./openkit_i18n.js";
 
 export const LOADER_NAME = "MediaLoader";
 export const SPLITTER_NAME = "ReferenceSplitter";
@@ -112,10 +113,10 @@ export function durations(all) {
 
 /* ---------------------------------------------------------------- i18n */
 
-/* 节点 UI 固定为中文展示（Load files / Clear media / 展开拆分器等按钮均为中文）。
-   setUiLang() 仍保留，可在控制台手动切换为英文。 */
-let uiLang = "zh";
-try { localStorage.setItem("mmxLoaderLang", "zh"); } catch (e) { /* ignore */ }
+/* 中英双语：语言由统一模块 window.OKT 管理（localStorage 'openkit_lang' 持久化，
+   默认跟随浏览器语言，切换后刷新/重开仍保持）。tr() 委托 OKT.tr()，
+   本文件 LANG_PAIRS/ZH_RULES/EN_RULES 注册进 OKT 供全局复用。 */
+let uiLang = OKT.lang;
 
 const LANG_PAIRS = [
   ["Expand Native-output splitter", "展开输出拆分器"],
@@ -265,29 +266,17 @@ const EN_RULES = [
   [/^空的 (\S+) 槽位 (\d+) — 点击浏览或拖入文件$/, (m, k, i) => `Empty ${tr(k)} slot ${i} — click to browse or drop a file`],
 ];
 
-function tr(text) {
-  if (typeof text !== "string" || !text) return text;
-  if (uiLang === "zh") {
-    for (const [en, zh] of LANG_PAIRS) {
-      if (text === en) return zh;
-    }
-    for (const [re, out] of ZH_RULES) {
-      if (re.test(text)) return text.replace(re, out);
-    }
-  } else {
-    for (const [en, zh] of LANG_PAIRS) {
-      if (text === zh) return en;
-    }
-    for (const [re, out] of EN_RULES) {
-      if (re.test(text)) return text.replace(re, out);
-    }
-  }
-  return text;
+// 注册本节点字典/规则到统一 i18n 模块，供全插件语言切换联动复用。
+OKT.addPairs(LANG_PAIRS);
+OKT.addRules(ZH_RULES, EN_RULES);
+
+function tr(text, params) {
+  return OKT.tr(text, params);
 }
 
 function setUiLang(lang) {
   uiLang = lang === "zh" ? "zh" : "en";
-  try { localStorage.setItem("mmxLoaderLang", uiLang); } catch (e) { /* ignore */ }
+  OKT.setLang(uiLang); // 持久化 localStorage + 派发 openkit:langchange 全局事件
 }
 
 /** Keep a normalised crop rect at the requested pixel aspect ratio while
@@ -2122,21 +2111,22 @@ class LoaderPanel {
       el("button", { class: "mml-btn", onclick: () => this.picker.click() },
         "Load files\u2026"),
       el("button", { class: "mml-btn mml-sm",
-        title: uiLang === "zh" ? "Switch to English" : "Switch to Chinese",
+        title: OKT.lang === "zh" ? "Switch to English" : "Switch to Chinese",
         onclick: () => {
           try {
-            setUiLang(uiLang === "zh" ? "en" : "zh");
+            setUiLang(OKT.lang === "zh" ? "en" : "zh");
             this.applyWidgetLabels();
             // Keep every panel of this node (on-node + any modal) in sync.
             (this.node._mmlPanels || []).forEach((p) => p.render());
             localizeDom(this.root);
             document.querySelectorAll?.(".mml-light, .mml-help, .mml-tmmodal, .mml-toast")
               .forEach((popup) => localizeDom(popup));
+            OKT.applyNodeTitles();
           } catch (err) {
             console.error("[Media Loader] language switch failed", err);
           }
         } },
-        uiLang === "zh" ? "EN" : "中"),
+        OKT.lang === "zh" ? "EN" : "中"),
       el("span", { style: { fontSize: "10px", color: "#6b7484" } },
         this.busy ? `uploading ${this.busy}\u2026` : "or drop files on any slot"),
       el("span", { class: "mml-topspace" }),
@@ -2642,7 +2632,7 @@ class MultiTabManager {
     if (!t) return;
     const name = (t.name || "").trim() || `Tab ${i}`;
     this.confirm(
-      `确定要关闭 Tab「${name}」吗？\n关闭后该页素材将丢失，且不可恢复。`,
+      tr("确定要关闭 Tab「{name}」吗？\n关闭后该页素材将丢失，且不可恢复。", { name }),
       () => {
         if (t.panel) {
           this.node._mmlPanels = (this.node._mmlPanels || [])
@@ -2719,8 +2709,8 @@ class MultiTabManager {
     const box = el("div", { class: "mml-modal-box" });
     const msgEl = el("div", { class: "mml-modal-msg" }, msg);
     const btns = el("div", { class: "mml-modal-btns" });
-    const cancel = el("button", { class: "mml-btn", textContent: "取消" });
-    const ok = el("button", { class: "mml-btn mml-del", textContent: "确认关闭" });
+    const cancel = el("button", { class: "mml-btn" }, "取消");
+    const ok = el("button", { class: "mml-btn mml-del" }, "确认关闭");
     const close = (val) => { overlay.remove(); };
     cancel.addEventListener("click", () => close());
     ok.addEventListener("click", () => { close(); onOk && onOk(); });
@@ -2761,7 +2751,7 @@ class MultiTabManager {
     this.syncTabIndex();
   }
 
-  _txt(zh, en) { return uiLang === "zh" ? zh : en; }
+  _txt(zh, en) { return OKT.lang === "zh" ? zh : en; }
 
   renderBody() {
     this.body.innerHTML = "";
@@ -2771,7 +2761,7 @@ class MultiTabManager {
       const cnt = t.panel ? fileCount(t.items) : 0;
       const tab = el("div", {
         class: "mml-tab" + (i === this._curTab ? " active" : ""),
-        title: `Tab ${i}（点击切换 · 双击改名）`,
+        title: tr("Tab {i}（点击切换 · 双击改名）", { i }),
       });
       const nameEl = el("span", { class: "mml-tab-name" },
         (t.name || "").trim() || `Tab ${i}`);
@@ -2887,44 +2877,70 @@ const VIDEOS = 3;
 const VIDEO_AUDIOS = 3;
 const AUDIOS = 8;
 
+// Bilingual hover tooltips (port index / widget name → {zh, en}). Applied
+// imperatively on node creation and re-applied on language switch.
 const TOOLTIP_IN = {
-  media_state: "多 Tab 素材状态（隐藏，由节点面板自动维护，无需手动编辑）。\n每个 Tab 页对应一套完整的素材，面板写入一条 {\"name\":\"...\",\"items\":[...]}，整体为 JSON 字符串 {\"tabs\":[{...}]}。\n若状态被误改坏，节点会提示清除后重新添加素材。",
-  tab_index: "指定「tab_references（指定素材）」输出哪个 Tab 页的整套素材。\n从 0 开始计数（0 = 第一个 Tab）。\n数值超过当前 Tab 总数时自动收敛到最后一个；新增/关闭 Tab 后面板会自动更新输入框上限。\n修改数值后点击其右侧的「联动切换」按钮，可把输出切换到对应编号 Tab 并展示该页素材。",
-  references: "要拆分的参考 bundle，通常来自 MediaLoader 的「指定素材」输出。\n超宽的 bundle 会被裁剪到前 N 个槽位。",
+  media_state: {
+    zh: "多 Tab 素材状态（隐藏，由节点面板自动维护，无需手动编辑）。\n每个 Tab 页对应一套完整的素材，面板写入一条 {\"name\":\"...\",\"items\":[...]}，整体为 JSON 字符串 {\"tabs\":[{...}]}。\n若状态被误改坏，节点会提示清除后重新添加素材。",
+    en: "Multi-tab media state (hidden, maintained by the panel — no manual editing).\nEach tab holds a complete media set; the panel writes {\"name\":\"...\",\"items\":[...]} per tab, the whole state being a JSON string {\"tabs\":[{...}]}.\nIf it gets corrupted, the node prompts you to clear it and re-add media.",
+  },
+  tab_index: {
+    zh: "指定「tab_references（指定素材）」输出哪个 Tab 页的整套素材。\n从 0 开始计数（0 = 第一个 Tab）。\n数值超过当前 Tab 总数时自动收敛到最后一个；新增/关闭 Tab 后面板会自动更新输入框上限。\n修改数值后点击其右侧的「联动切换」按钮，可把输出切换到对应编号 Tab 并展示该页素材。",
+    en: "Selects which tab's whole media set the 指定素材 (tab_references) output provides.\n0-based (0 = first tab).\nOut-of-range values clamp to the last tab; the panel updates the input's max after adding/removing tabs.\nAfter editing, click the 联动切换 button beside it to switch the output to that tab and show its media.",
+  },
+  references: {
+    zh: "要拆分的参考 bundle，通常来自 MediaLoader 的「指定素材」输出。\n超宽的 bundle 会被裁剪到前 N 个槽位。",
+    en: "The reference bundle to split, usually from the Media Loader's 指定素材 output.\nOver-wide bundles are trimmed to the first N slots.",
+  },
 };
 // 按端口索引映射（0/1）而非端口名：后端 RETURN_NAMES 改为中文后，
 // 端口显示名会变为「指定素材 / Tab索引」，用索引映射在改名前后都稳定。
 const TOOLTIP_OUT_LOADER = {
-  0: "指定素材（tab_references）：仅输出「Tab索引」选中的那个 Tab 页的参考 bundle。索引越界自动收敛到最后一个。\n适用于按编号逐段生成视频时，只取当前这一段对应的整套素材。",
-  1: "Tab索引（tab_index）：当前实际选中并输出的 Tab 页索引（0-based）。\n当输入索引越界或选中空 Tab 时，会自动收敛到有效 Tab，此输出反映最终生效的索引。",
+  0: {
+    zh: "指定素材（tab_references）：仅输出「Tab索引」选中的那个 Tab 页的参考 bundle。索引越界自动收敛到最后一个。\n适用于按编号逐段生成视频时，只取当前这一段对应的整套素材。",
+    en: "Specified media (tab_references): outputs only the reference bundle of the tab selected by 索引 Tab. Out-of-range clamps to the last tab.\nUse when generating shot-by-shot by number — only the current shot's full media set is taken.",
+  },
+  1: {
+    zh: "Tab索引（tab_index）：当前实际选中并输出的 Tab 页索引（0-based）。\n当输入索引越界或选中空 Tab 时，会自动收敛到有效 Tab，此输出反映最终生效的索引。",
+    en: "Tab index (tab_index): the 0-based index of the tab currently selected and output.\nWhen the input index is out of range or the tab is empty, it clamps to a valid tab; this output reflects the final effective index.",
+  },
 };
 const TOOLTIP_OUT_SPLITTER = {};
 for (const cat of ["关键帧", "角色", "道具", "场景"])
-  TOOLTIP_OUT_SPLITTER[cat] =
-    `${cat}图片列表：本分类下所有参考图，按用户设定的编号升序排列。每张图为一个 IMAGE tensor，列表顺序即编号顺序（${cat} 1、${cat} 2…）。没有该分类图片时输出空列表。`;
+  TOOLTIP_OUT_SPLITTER[cat] = {
+    zh: `${cat}图片列表：本分类下所有参考图，按用户设定的编号升序排列。每张图为一个 IMAGE tensor，列表顺序即编号顺序（${cat} 1、${cat} 2…）。没有该分类图片时输出空列表。`,
+    en: `${cat} picture list: every reference image in this category, ascending by the user-set number. Each image is an IMAGE tensor; list order equals number order (${cat} 1, ${cat} 2…). Outputs an empty list when there is none.`,
+  };
 for (let i = 1; i <= VIDEOS; i++)
-  TOOLTIP_OUT_SPLITTER[`video_${i}`] =
-    `video_${i}（参考视频 ${i}/${VIDEOS}）：输入 bundle 中第 ${i} 个参考视频（IMAGE 序列）。没有第 ${i} 个视频时输出为空。`;
+  TOOLTIP_OUT_SPLITTER[`video_${i}`] = {
+    zh: `video_${i}（参考视频 ${i}/${VIDEOS}）：输入 bundle 中第 ${i} 个参考视频（IMAGE 序列）。没有第 ${i} 个视频时输出为空。`,
+    en: `video_${i} (reference video ${i}/${VIDEOS}): the ${i}th reference video (IMAGE sequence) in the input bundle. Empty when there is no ${i}th video.`,
+  };
 for (let i = 1; i <= VIDEO_AUDIOS; i++)
-  TOOLTIP_OUT_SPLITTER[`video_audio_${i}`] =
-    `video_audio_${i}（视频配对音轨 ${i}/${VIDEO_AUDIOS}）：第 ${i} 个参考视频的配对音轨（AUDIO），仅在对应视频开启音轨并选择「配对」模式时才有输出，否则为空。`;
+  TOOLTIP_OUT_SPLITTER[`video_audio_${i}`] = {
+    zh: `video_audio_${i}（视频配对音轨 ${i}/${VIDEO_AUDIOS}）：第 ${i} 个参考视频的配对音轨（AUDIO），仅在对应视频开启音轨并选择「配对」模式时才有输出，否则为空。`,
+    en: `video_audio_${i} (paired soundtrack ${i}/${VIDEO_AUDIOS}): the paired AUDIO track of the ${i}th reference video. Only outputs when that video's audio is on and set to 配对; otherwise empty.`,
+  };
 for (let i = 1; i <= AUDIOS; i++)
-  TOOLTIP_OUT_SPLITTER[`audio_${i}`] =
-    `audio_${i}（独立音频 ${i}/${AUDIOS}）：输入 bundle 中第 ${i} 个独立音频（AUDIO）。包含「独立」模式的视频音轨；没有第 ${i} 个时输出为空。`;
+  TOOLTIP_OUT_SPLITTER[`audio_${i}`] = {
+    zh: `audio_${i}（独立音频 ${i}/${AUDIOS}）：输入 bundle 中第 ${i} 个独立音频（AUDIO）。包含「独立」模式的视频音轨；没有第 ${i} 个时输出为空。`,
+    en: `audio_${i} (standalone audio ${i}/${AUDIOS}): the ${i}th standalone AUDIO in the input bundle. Includes 独立-mode video soundtracks; empty when there is no ${i}th one.`,
+  };
 
 function applyTooltips(node, inTips, outTips) {
+  const L = OKT.lang === "zh" ? "zh" : "en";
   for (const inp of node.inputs || [])
-    if (inTips[inp.name]) inp.tooltip = inTips[inp.name];
+    if (inTips[inp.name]) inp.tooltip = inTips[inp.name][L];
   // 输出优先按端口索引取提示（loader 的中文端口名可能因后端改名而变化），
   // 拆分器等仍按端口名取提示，两者都不存在时跳过。
   (node.outputs || []).forEach((out, i) => {
     const t = outTips[i] ?? (outTips[out.name] ?? null);
-    if (t) out.tooltip = t;
+    if (t) out.tooltip = t[L];
   });
   for (const wd of node.widgets || []) {
     if (inTips[wd.name]) {
-      wd.tooltip = inTips[wd.name];
-      if (wd.options) wd.options.tooltip = inTips[wd.name];
+      wd.tooltip = inTips[wd.name][L];
+      if (wd.options) wd.options.tooltip = inTips[wd.name][L];
     }
   }
 }
@@ -2999,7 +3015,7 @@ app.registerExtension({
       const linkSwitchBtn = this.addWidget("button", "联动切换", null,
         () => this._mmlTabsManager?.linkSwitch());
       if (linkSwitchBtn) linkSwitchBtn.title =
-        "修改 Tab 索引后点击，下方 Tab 页自动切换到对应索引，并联动切换输出";
+        tr("修改 Tab 索引后点击，下方 Tab 页自动切换到对应索引，并联动切换输出");
       // 原生控件（Tab索引 / 联动切换 / 展开拆分）的外观由顶部自定义 DOM 栏
       // 接管（与多Tab字符串节点顶部样式一致）；这里隐藏原生 widget，功能与
       // 序列化仍由它们承担。
@@ -3115,4 +3131,37 @@ app.registerExtension({
       return r;
     };
   },
+});
+
+// 全局语言切换联动：任一 Openkit 节点切换语言后，刷新所有 Openkit 节点
+// （MediaLoader 面板重渲染、端口/控件 tooltip 重应用、节点标题更新），
+// 保证一键切换全量生效、无需逐个节点刷新。
+window.addEventListener("openkit:langchange", () => {
+  try {
+    const graph = app?.graph;
+    if (!graph) return;
+    (graph._nodes || []).forEach((n) => {
+      if (!n) return;
+      if (n.type === LOADER_NAME) {
+        const mgr = n._mmlTabsManager;
+        try {
+          if (mgr) {
+            if (typeof mgr.applyWidgetLabels === "function") mgr.applyWidgetLabels();
+            if (mgr.root && typeof localizeDom === "function") localizeDom(mgr.root);
+            if (typeof mgr.renderBody === "function") {
+              if (mgr.body) mgr.body.innerHTML = "";
+              mgr.renderBody();
+            }
+          }
+          (n._mmlPanels || []).forEach((p) => {
+            if (p && typeof p.render === "function") p.render();
+          });
+          applyTooltips(n, TOOLTIP_IN, TOOLTIP_OUT_LOADER);
+        } catch (e) { /* one node failing must not stop the rest */ }
+      } else if (n.type === SPLITTER_NAME) {
+        applyTooltips(n, TOOLTIP_IN, TOOLTIP_OUT_SPLITTER);
+      }
+    });
+    OKT.applyNodeTitles();
+  } catch (e) { console.error("[Media Loader] langchange refresh failed", e); }
 });
