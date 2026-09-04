@@ -11,8 +11,9 @@ Open, standardized ComfyUI utility node collection. No black-box encapsulation, 
 - **JSON-driven prompt generation** — Extract structured data from JSON and generate MiniMax H3 six-part standard prompts
 - **Multi-frame reference management** — Organize keyframes, image lists, and background layers with correct index ordering
 - **Subject reference tag replacement** — Replace entity names with `<Subject N>` tags across all prompt sections
-- **Multi-tab media loading** — Up to 32 tabs of reference bundles (pictures/videos/audios) with trim, crop, soundtracks, presets
+- **Multi-tab media loading** — Unlimited tabs of reference bundles (pictures/audios/videos, no media-count limits) with 3-column layout, trim, crop, soundtracks, presets
 - **Multi-segment prompt visual editor** — Edit complex H3 JSON through hierarchical tabs, no raw JSON exposure
+- **Unified original UI style** — Every node inherits ComfyUI native variables with an original "Openkit Lite" amber accent design (tokens: `openkit_ui.js`), consistent, adaptive, low-overhead
 - **Full Chinese/English bilingual UI** — One-click language switch on every node (persisted), all static UI text localizes; JSON keys/values and your data are never touched
 - **Standard ComfyUI plugin structure** — Follows official conventions, easy to install and extend
 - **Fully documented** — Every input, output, and internal logic is explained
@@ -20,8 +21,9 @@ Open, standardized ComfyUI utility node collection. No black-box encapsulation, 
 - **JSON 驱动提示词生成** — 从 JSON 提取结构化数据，生成 MiniMax H3 六段式标准提示词
 - **多帧参考管理** — 管理关键帧、图像列表与背景层，索引顺序正确
 - **主体引用标签置换** — 在所有提示词段落中将实体名替换为 `<Subject N>` 标签
-- **多 Tab 素材加载** — 最多 32 个 Tab 页参考素材集（图片/视频/音频），支持裁剪、剪辑、音轨、预设
+- **多 Tab 素材加载** — 不限 Tab 数量、参考素材（图片/音频/视频）数量无上限，三栏布局，支持裁剪、剪辑、音轨、预设
 - **多段提示词可视化编辑** — 通过层级化 Tab 编辑复杂 H3 JSON，无需接触原始 JSON
+- **统一原创 UI 风格** — 每个节点继承 ComfyUI 原生变量 + 原创「Openkit Lite」琥珀强调设计（tokens：`openkit_ui.js`），风格一致、自适应、低开销
 - **全插件中英双语** — 每个节点一键切换语言（自动记忆），全部静态 UI 文案同步本地化；JSON 键/值与用户数据绝不翻译
 - **标准 ComfyUI 插件结构** — 遵循官方规范，易于安装与扩展
 - **完整文档** — 每个输入、输出及内部逻辑均有说明
@@ -125,9 +127,9 @@ Replaces entity names (characters, props, scenes, keyframes) with corresponding 
 
 ### 5. MediaLoader (素材加载)
 
-Loads reference-media sets across multiple tabs on a single node. Each added tab (up to 32) is one segment's complete, **independent** reference bundle: pictures (up to 32), videos (≤3) and audios (≤8). Per-tab video trim, picture/video crop, soundtrack pairing, drag sorting, enable/disable, presets and tag display are all built in. Pictures carry a category (关键帧 / 角色 / 道具 / 场景) and an auto-assigned read-only number, sorted as 关键帧 → 角色 → 道具 → 场景.
+Loads reference-media sets across multiple tabs on a single node. Each added tab is one segment's complete, **independent** reference bundle with **no media-count limit** on pictures, videos, audios or soundtracks. Panel layout is three columns — **Pictures | Audio | Video** — each freely adding slots via a `+` button or drag-and-drop. Per-tab video trim, picture/video crop, soundtrack pairing, drag sorting, enable/disable, presets and tag display are all built in. Pictures carry a category (关键帧 / 角色 / 道具 / 场景) and an auto-assigned read-only number, sorted as 关键帧 → 角色 → 道具 → 场景.
 
-单节点加载多 Tab 页参考素材集。每个 Tab 页（最多 32 个）= 一个视频段完整、**独立**的参考素材集：参考图（最多 32 张）、参考视频（≤3）、参考音频（≤8）。内置每 Tab 视频剪辑、图片/视频裁剪、音轨配对、拖拽排序、开关、预设与标签显示。每张参考图带分类（关键帧 / 角色 / 道具 / 场景）和自动分配的只读编号，按 关键帧 → 角色 → 道具 → 场景 顺序排列。
+单节点加载多 Tab 页参考素材集。每个 Tab 页 = 一个视频段完整、**独立**的参考素材集，**图片/视频/音频/音轨数量均无上限**。面板为三栏布局——**图片 | 音频 | 视频**，每栏通过 `+` 按钮或拖放自由增加槽位。内置每 Tab 视频剪辑、图片/视频裁剪、音轨配对、拖拽排序、开关、预设与标签显示。每张参考图带分类（关键帧 / 角色 / 道具 / 场景）和自动分配的只读编号，按 关键帧 → 角色 → 道具 → 场景 顺序排列。
 
 **Inputs / 输入:**
 
@@ -145,8 +147,9 @@ Loads reference-media sets across multiple tabs on a single node. Each added tab
 
 **Capabilities / 能力:**
 
-- Up to 32 tabs, each holding one segment's pictures / videos / audios, **independent limits** / 最多 32 个 Tab，每 Tab 独立存放图/视频/音频，**上限互相独立**
-- Per-tab capacity: up to 32 pictures, 3 videos, 8 audio clips / 每 Tab 容量：最多 32 图、3 视频、8 音频
+- Unlimited tabs, each holding one segment's pictures / videos / audios, **independent limits** / 不限 Tab 数量，每 Tab 独立存放图/视频/音频，**各自独立无上限**
+- No per-tab capacity limit: add as many pictures, videos, audio clips as you need / 每 Tab 容量无上限：图片、视频、音频数量自由添加
+- Three-column layout (Pictures | Audio | Video) with per-column `+` slot button / 三栏布局（图片 | 音频 | 视频），每栏 `+` 按钮添加槽位
 - Tab add / delete / rename; add a tab with one click / Tab 增删/重命名，一键新增整套素材加载器
 - Picture slot title bar: category dropdown + auto-assigned read-only number / 图片槽位顶部标题栏：分类下拉 + 自动分配只读编号
 - Number auto-assignment: switching category picks first unused number in that category / 编号自适应：切换分类自动分配该分类下第一个未使用编号
@@ -155,15 +158,15 @@ Loads reference-media sets across multiple tabs on a single node. Each added tab
 - Soundtrack routing per video: paired / standalone / off / 每个视频的音轨路由：配对 / 独立 / 关闭
 - Drag sorting, enable/disable, delete, budget monitor / 拖拽排序、开关、删除、预算监控
 - Presets: save / load / delete, stored in `ComfyUI/input/openkit/presets/media_loader/` / 预设：保存/加载/删除，存放在 `ComfyUI/input/openkit/presets/media_loader/`
-- The splitter node (ReferenceSplitter) emits **4 category picture lists** (关键帧 / 角色 / 道具 / 场景), each ordered by number / 拆分节点输出 **4 个分类图片列表**（关键帧 / 角色 / 道具 / 场景），每类按编号排序
+- The splitter node (ReferenceSplitter) emits **7 list ports**: 4 category picture lists (关键帧 / 角色 / 道具 / 场景) + videos + video-audios + audios, array order is authoritative / 拆分节点输出 **7 个 list 端口**：4 个分类图片列表（关键帧 / 角色 / 道具 / 场景）+ 视频 + 视频音轨 + 音频，数组顺序即权威
 
 ---
 
 ### 6. ReferenceSplitter (素材拆分)
 
-Fan a `MEDIA_REFS` bundle out into individual slots: 4 category picture lists (关键帧/角色/道具/场景), 3 video slots, 3 video-audio slots, 8 audio slots.
+Fan a `MEDIA_REFS` bundle out into **7 list ports**: 4 category picture lists (关键帧/角色/道具/场景), videos, video-audios (None-filtered) and audios — all **unbounded**.
 
-将 `MEDIA_REFS` bundle 拆分为独立端口：4 个分类图片列表（关键帧/角色/道具/场景）、3 个视频端口、3 个视频音轨端口、8 个音频端口。
+将 `MEDIA_REFS` bundle 拆分为 **7 个 list 端口**：4 个分类图片列表（关键帧/角色/道具/场景）、视频、视频音轨（过滤 None）与音频——全部**无上限**。
 
 ---
 
