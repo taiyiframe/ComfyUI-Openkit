@@ -418,9 +418,22 @@ app.registerExtension({
         hideOnZoom: false,
         serialize: false,
       });
-      domWidget.computeLayoutSize = () => ({
-        minHeight: 400, minWidth: 440,
-        maxHeight: 100000, maxWidth: 100000,
+      domWidget.computeLayoutSize = () => {
+        const nw = Math.max(440, this.size?.[0] || 440);
+        const nh = Math.max(400, (this.size?.[1] || 0) - 34);
+        return {
+          minHeight: 400, minWidth: 440,
+          maxHeight: 100000, maxWidth: 100000,
+          preferredWidth: nw,   // 关键：驱动 .dom-widget 宽度随节点缩放，缺省退化 width:0 塌缩
+          preferredHeight: nh,  // 关键：高度随节点高度，面板内容 flex 自适应
+        };
+      };
+      // 关键根治：ComfyUI 布局可能把 widget.width 误设成极小值导致面板塌缩；
+      // 用 getter 恒返回节点宽度，读时永远正确、写时忽略，彻底消除塌缩。
+      Object.defineProperty(domWidget, "width", {
+        configurable: true,
+        get: () => Math.max(440, this.size?.[0] || 440),
+        set: () => {},
       });
       domWidget.beforeQueued = () => { this._syncJson(); };
       this.size[0] = Math.max(440, this.size[0] || 0);

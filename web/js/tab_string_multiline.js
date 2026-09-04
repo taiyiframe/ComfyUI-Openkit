@@ -66,10 +66,11 @@ const CSS = `
 .tsm-tab.tsm-add:hover{background:var(--ok-panel);color:var(--ok-text);border-color:var(--ok-line-2);}
 .tsm-rename{width:140px;background:var(--ok-panel-2);color:var(--ok-text);border:1px solid var(--ok-line-2);
   border-radius:4px;padding:1px 4px;font-size:11px;box-sizing:border-box;}
-.tsm-text{flex:1;min-height:120px;background:var(--ok-panel-2);color:var(--ok-text);
+.tsm-text{flex:1;min-height:120px;min-width:0;background:var(--ok-panel-2);color:var(--ok-text);
   border:1px solid var(--ok-line-2);border-radius:6px;padding:6px;font-size:12px;
   font-family:var(--ok-mono);resize:none;box-sizing:border-box;
-  white-space:pre;overflow:auto;}
+  white-space:pre-wrap;overflow-wrap:break-word;word-break:break-word;
+  overflow-y:auto;overflow-x:hidden;line-height:1.5;}
 .tsm-text:focus{outline:none;border-color:var(--ok-accent-2);}
 `;
 
@@ -211,9 +212,22 @@ app.registerExtension({
         hideOnZoom: false,
         serialize: false,
       });
-      domWidget.computeLayoutSize = () => ({
-        minHeight: 300, minWidth: 380,
-        maxHeight: 100000, maxWidth: 100000,
+      domWidget.computeLayoutSize = () => {
+        const nw = Math.max(380, this.size?.[0] || 380);
+        const nh = Math.max(300, (this.size?.[1] || 0) - 34);
+        return {
+          minHeight: 300, minWidth: 380,
+          maxHeight: 100000, maxWidth: 100000,
+          preferredWidth: nw,   // 关键：驱动 .dom-widget 宽度随节点缩放，缺省退化 width:0 塌缩
+          preferredHeight: nh,  // 关键：高度随节点高度，面板文本区 flex 自适应
+        };
+      };
+      // 关键根治：ComfyUI 布局可能把 widget.width 误设成极小值导致面板塌缩；
+      // 用 getter 恒返回节点宽度，读时永远正确、写时忽略，彻底消除塌缩。
+      Object.defineProperty(domWidget, "width", {
+        configurable: true,
+        get: () => Math.max(380, this.size?.[0] || 380),
+        set: () => {},
       });
       domWidget.beforeQueued = () => {
         this._tsmSyncIdx();
