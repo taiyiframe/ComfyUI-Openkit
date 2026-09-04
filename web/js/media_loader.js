@@ -1821,6 +1821,14 @@ async function uploadFile(file) {
 
 /* --------------------------------------------------------------- panel */
 
+// Stable per-item uid for container-level event delegation (picture wall).
+// Runtime-only field, never serialized; stable across re-renders per session.
+let __picUidSeq = 1;
+function picUid(it) {
+  if (it._uid == null) it._uid = __picUidSeq++;
+  return it._uid;
+}
+
 class LoaderPanel {
   constructor(node, opts = {}) {
     this.node = node;
@@ -2122,6 +2130,9 @@ class LoaderPanel {
     this.resort();
   }
 
+  /** Stable per-item uid so container-level event delegation can resolve the
+   *  clicked item without re-binding listeners on every slot. Runtime-only
+   *  field (never serialized); stable across re-renders within a session. */
   reorderable(node, item) {
     node.draggable = true;
     // The whole media tile is the drag handle. Images/videos/audio have native
@@ -2179,9 +2190,13 @@ class LoaderPanel {
   }
 
   /** One filled picture slot (title bar + full-bleed preview + bottom bar).
-   *  Shared by the full render and the windowed render so both stay identical. */
+   *  Shared by the full render and the windowed render so both stay identical.
+   *  Interactions use data-pact/data-uid and are handled by ONE container-level
+   *  click listener (_attachPicDelegate), so a windowed scroll that rebuilds
+   *  rows re-binds zero listeners instead of several per slot. */
   _picCell(it, tags) {
     const tag = (tags.get(it) || "").slice(1, -1);
+    const uid = picUid(it);
     return this.reorderable(el("div",
       { class: "mml-slot filled pic" + (isOn(it) ? "" : " off") },
       // Title bar at top: category dropdown + auto-assigned read-only number
@@ -2192,8 +2207,10 @@ class LoaderPanel {
         const badge = el("span", { class: "mml-dims" },
           dimsLabel(it.width, it.height));
         const img = el("img", { class: "mml-pic", src: viewURL(it.file),
+          loading: "lazy", decoding: "async",
           title: dimsTitle(it.name, it.width, it.height),
           style: it.crop ? { clipPath: cropClip(it.crop) } : null,
+          "data-pact": "crop", "data-uid": uid,
           onload: () => {
             // Items from before dimensions were stored learn them here.
             if (!it.width && img.naturalWidth) {
@@ -2203,8 +2220,7 @@ class LoaderPanel {
               img.title = dimsTitle(it.name, it.width, it.height);
               this.commit();
             }
-          },
-          onclick: () => new ImageCropModal(this, it) });
+          } });
         applyPreviewCrop(img, it);
         if (typeof ResizeObserver !== "undefined") {
           new ResizeObserver(() => applyPreviewCrop(img, it)).observe(img);
@@ -2212,11 +2228,16 @@ class LoaderPanel {
         return [img, badge];
       })(),
       el("div", { class: "mml-picbar" },
-        this.powerBtn(it),
+        el("span", { class: "mml-power" + (isOn(it) ? " on" : ""),
+          title: isOn(it) ? "Switch off — kept here but not sent to the model"
+            : "Switch on",
+          "data-pact": "power", "data-uid": uid },
+          isOn(it) ? "\u25c9" : "\u25cb"),
         el("span", { class: "mml-tag pic" }, isOn(it) ? tag : "off"),
-        this.cropImageBtn(it),
+        el("span", { class: "mml-trimbtn", title: "Crop this image",
+          "data-pact": "crop", "data-uid": uid }, "\u2702"),
         el("span", { class: "mml-x", title: "Remove",
-          onclick: () => this.remove(it) }, "\u2715"))), it);
+          "data-pact": "remove", "data-uid": uid }, "\u2715"))), it);
   }
 
   /** Picture wall: full render below the threshold; viewport-windowed render
@@ -2225,12 +2246,30 @@ class LoaderPanel {
    *  so hundreds of slots cost the same as a screenful — decoded image memory
    *  is released as slots leave the viewport. Row geometry is deterministic
    *  (fixed 16:9 slots in an auto-fill grid), so the window math is exact. */
+  /** Container-level click delegation for the picture wall. Slot actions are
+   *  tagged with data-pact (crop/power/remove) + data-uid; one listener per
+   *  container replaces the per-slot onclick bindings, so windowed scrolling
+   *  (which rebuilds rows) never re-binds listeners. */
+  _attachPicDelegate(container) {
+    container.addEventListener("click", (e) => {
+      const t = e.target && e.target.closest ? e.target.closest("[data-pact]") : null;
+      if (!t) return;
+      const item = this.items.find((x) => x._uid === Number(t.getAttribute("data-uid")));
+      if (!item) return;
+      const act = t.getAttribute("data-pact");
+      if (act === "crop") new ImageCropModal(this, item);
+      else if (act === "power") this.toggle(item);
+      else if (act === "remove") this.remove(item);
+    });
+  }
+
   renderPicWall(colPic, pics, tags) {
     if (pics.length <= PIC_WINDOW_THRESHOLD) {
       const picCells = pics.map((it) => this._picCell(it, tags));
       picCells.push(this.addSlot("图片"));
       const grid = el("div", { class: "mml-pics" }, picCells);
       colPic.append(grid);
+      this._attachPicDelegate(grid);
       /* 列数上限 8 列：根据实际宽度算列数，但不超过 PIC_MAX_COLS。
          宽度继续增大时不再加列，而是让每列 1fr 等比放大，槽位随之变大。 */
       const applyCols = () => {
@@ -2251,6 +2290,7 @@ class LoaderPanel {
     const inner = el("div", { class: "mml-win-inner" });
     scroller.append(inner);
     colPic.append(scroller);
+    this._attachPicDelegate(scroller);
     const addEl = this.addSlot("图片");
     const GAP = PIC_WIN_GAP;
     let cols = 1, rowH = 150, totalRows = 1;
@@ -2497,7 +2537,7 @@ class LoaderPanel {
           const t = it.trim;
           if (t && t.start) try { e.target.currentTime = t.start; } catch (_) {}
         }, src: viewURL(it.file), muted: true,
-        preload: "metadata",
+        preload: "metadata", loading: "lazy", decoding: "async",
         onmouseenter: (e) => e.target.play().catch(() => {}),
         onmouseleave: (e) => e.target.pause(),
         onclick: () => new TrimModal(this, it) });
