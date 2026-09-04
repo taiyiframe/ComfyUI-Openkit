@@ -509,8 +509,8 @@ const CSS = `
 .mml-panel{font-family:var(--ok-font);color:var(--ok-text);font-size:12px;
   background:var(--ok-bg);border:1px solid var(--ok-line);border-radius:8px;padding:8px;
   display:flex;flex-direction:column;gap:6px;box-sizing:border-box;
-  width:100%;height:100%;min-height:476px;overflow:hidden;}
-.mml-cols{flex:1;min-height:132px;display:grid;
+  width:100%;height:100%;min-height:238px;overflow:hidden;}
+.mml-cols{flex:1;min-height:66px;display:grid;
   grid-template-columns:minmax(0,7fr) minmax(0,3fr) minmax(0,3fr);
   gap:0;overflow:hidden;}
 .mml-col{display:flex;flex-direction:column;gap:5px;min-width:0;min-height:0;overflow:hidden;
@@ -586,14 +586,16 @@ const CSS = `
   box-sizing:border-box;}
 .mml-win-row > .mml-slot{width:100%;}
 .mml-winfill{min-height:0;}
-/* 视频/音频区：各占一列，无数量上限，行内滚动 */
-.mml-vids{flex:1;min-height:0;overflow-y:auto;display:grid;
-  grid-auto-rows:60px;gap:5px;grid-template-columns:minmax(0,1fr);
+/* 视频/音频区：各占一列，无数量上限，行内滚动。行高不用固定 px，而是
+   随列区自身高度按容器查询比例缩放（下限 56px / 上限 140px），面板拉高或
+   缩小时槽位随之适配，始终可读。 */
+.mml-vids{flex:1;min-height:0;overflow-y:auto;display:grid;container-type:size;
+  grid-auto-rows:clamp(56px,14cqh,140px);gap:5px;grid-template-columns:minmax(0,1fr);
   align-content:start;overscroll-behavior:contain;scrollbar-width:thin;}
 .mml-spacer{flex:0 0 auto;min-height:0;}
 /* 音频区：与视频一样，一行一个竖着排列，无上限滚动 */
-.mml-auds{flex:1;min-height:0;overflow-y:auto;display:grid;
-  grid-auto-rows:60px;gap:5px;grid-template-columns:minmax(0,1fr);
+.mml-auds{flex:1;min-height:0;overflow-y:auto;display:grid;container-type:size;
+  grid-auto-rows:clamp(56px,14cqh,140px);gap:5px;grid-template-columns:minmax(0,1fr);
   align-content:start;overscroll-behavior:contain;scrollbar-width:thin;}
 /* 每栏末尾的“添加”槽位 */
 .mml-addslot{border:1px dashed #2b313d;border-radius:var(--ok-radius);background:var(--ok-panel);
@@ -627,19 +629,21 @@ const CSS = `
   display:block;cursor:zoom-in;background:#0d1015;}
 .mml-picbar{position:absolute;left:0;right:0;bottom:0;display:flex;align-items:center;
   gap:4px;padding:1px 4px;background:rgba(10,12,16,.82);min-width:0;overflow:hidden;}
-.mml-picmeta{position:absolute;left:0;right:0;top:0;display:flex;gap:3px;
-  padding:2px 3px;background:transparent;z-index:3;min-width:0;align-items:center;
+.mml-picmeta{position:absolute;left:auto;right:0;top:0;display:flex;gap:4px;justify-content:flex-end;
+  padding:2px 3px;background:transparent;z-index:3;min-width:0;max-width:100%;align-items:center;
   box-sizing:border-box;height:22px;border-bottom:none;}
-/* Title bar is fully see-through so the picture content shows through; only a
-   faint drop shadow keeps the yellow text legible over bright areas. The
-   wrapper shrinks to the text width so the arrow sits right next to the label. */
+/* Title bar is fully see-through so the picture content shows through; the
+   category dropdown + read-only number sit together at the top-right corner.
+   A light four-way outline (text-shadow) keeps the yellow text legible over
+   bright image areas without adding any background. */
 .mml-picwrap{position:relative;flex:0 0 auto;box-sizing:border-box;
   display:inline-block;height:18px;line-height:18px;}
 .mml-piccat{display:block;width:auto;height:100%;box-sizing:border-box;
   font-family:var(--ok-mono);font-size:9px;background:transparent;color:var(--ok-accent-2);
   border:none;border-radius:3px;padding:0 8px 0 1px;outline:none;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:1;text-align:center;
-  text-shadow:0 1px 2px rgba(0,0,0,.75);
+  text-shadow:1px 0 0 rgba(0,0,0,.65),-1px 0 0 rgba(0,0,0,.65),
+    0 1px 0 rgba(0,0,0,.65),0 -1px 0 rgba(0,0,0,.65),0 1px 2px rgba(0,0,0,.6);
   -webkit-appearance:none;appearance:none;cursor:pointer;}
 .mml-piccat option{background:#1c212b;color:#ffffff;}
 /* Dropdown affordance: a small triangle drawn with CSS borders, tinted with the
@@ -648,12 +652,14 @@ const CSS = `
   width:0;height:0;pointer-events:none;
   border-left:3px solid transparent;border-right:3px solid transparent;
   border-top:4px solid var(--ok-accent-2);
-  filter:drop-shadow(0 1px 1px rgba(0,0,0,.75));}
+  filter:drop-shadow(0 0 1px rgba(0,0,0,.8)) drop-shadow(0 1px 1px rgba(0,0,0,.7));}
 .mml-piccat:focus{background:rgba(255,255,255,.06);}
 .mml-picnum{flex:0 0 auto;min-width:3ch;box-sizing:border-box;
   font-family:var(--ok-mono);font-size:9px;background:transparent;color:var(--ok-accent-2);
   border:none;border-radius:3px;padding:1px 4px;outline:none;height:18px;
-  text-align:center;opacity:1;font-weight:600;text-shadow:0 1px 2px rgba(0,0,0,.75);}
+  text-align:center;opacity:1;font-weight:600;
+  text-shadow:1px 0 0 rgba(0,0,0,.65),-1px 0 0 rgba(0,0,0,.65),
+    0 1px 0 rgba(0,0,0,.65),0 -1px 0 rgba(0,0,0,.65),0 1px 2px rgba(0,0,0,.6);}
 .mml-tag{font-family:var(--ok-mono);font-size:9px;white-space:nowrap;}
 .mml-tag.pic{color:var(--ok-accent-2);} .mml-tag.vid{color:var(--ok-video);} .mml-tag.aud{color:var(--ok-audio);}
 .mml-x{cursor:pointer;color:#7a8393;font-size:11px;line-height:1;}
@@ -2656,10 +2662,12 @@ export function openLoaderModal(node, targetPanel) {
 
 const MAX_TABS = 32;
 const TAB_H = 30;
-// Full expanded height of one tab's loader panel: tall enough that every
-// section (pictures 4×8, videos 1-3, audios 1-8, tag order) is visible with
-// no clipping. The canvas height strictly follows the sum over tabs.
-const TAB_PANEL_H = 880;
+// Height of one tab's loader panel. Panels now scroll internally (each media
+// column is independently scrollable), so a compact height is fine and the
+// node's default canvas stays low. Users can still drag the bottom-right corner
+// to grow any tab. Reduced to ~half of the original 880 to lower the node's
+// minimum footprint.
+const TAB_PANEL_H = 400;
 
 class MultiTabManager {
   constructor(node) {
