@@ -15,6 +15,7 @@
  */
 import { app } from "../../../scripts/app.js";
 import { OKT } from "./openkit_i18n.js";
+import { injectOpenkitUI, oktSurface } from "./openkit_ui.js";
 
 const NODE_NAME = "TabStringMultiline";
 const MAX_TAB_COUNT = 64;
@@ -23,20 +24,21 @@ const tr = (t) => OKT.tr(t);
 
 const CSS = `
 .tsm-root{display:flex;flex-direction:column;gap:6px;width:100%;height:100%;
-  min-height:260px;box-sizing:border-box;padding:6px;background:#191c22;
-  border:1px solid #2a2f3a;border-radius:8px;font-family:system-ui,sans-serif;
-  color:#d7dbe2;font-size:12px;overflow:hidden;}
+  min-height:260px;box-sizing:border-box;padding:6px;background:var(--ok-bg);
+  border:1px solid var(--ok-line);border-radius:8px;font-family:var(--ok-font);
+  color:var(--ok-text);font-size:12px;overflow:hidden;}
 .tsm-top{display:flex;align-items:center;gap:6px;flex:0 0 auto;}
-.tsm-toplabel{font-size:11px;color:#8a93a3;flex:0 0 auto;letter-spacing:.03em;}
-.tsm-idx{width:56px;background:#12151b;color:#dde2ea;border:1px solid #4a5568;
-  border-radius:6px;padding:3px 6px;font-size:12px;font-family:ui-monospace,monospace;}
-.tsm-idx:focus{outline:none;border-color:#6f86b8;}
-.tsm-btn{background:#2b3140;border:1px solid #3a4252;color:#d7dbe2;border-radius:6px;
-  padding:4px 10px;font-size:11px;cursor:pointer;flex:0 0 auto;}
+.tsm-toplabel{font-size:11px;color:var(--ok-dim);flex:0 0 auto;letter-spacing:.03em;}
+.tsm-idx{width:56px;background:var(--ok-panel-2);color:#dde2ea;border:1px solid #4a5568;
+  border-radius:6px;padding:3px 6px;font-size:12px;font-family:var(--ok-mono);}
+.tsm-idx:focus{outline:none;border-color:var(--ok-accent-2);}
+.tsm-btn{background:var(--ok-panel);border:1px solid #3a4252;color:var(--ok-text);border-radius:var(--ok-radius);
+  padding:4px 10px;font-size:11px;cursor:pointer;flex:0 0 auto;font-family:var(--ok-font);
+  transition:background var(--ok-transition), border-color var(--ok-transition), color var(--ok-transition);}
 .tsm-btn:hover{background:#333b4d;}
 .tsm-tabs{display:flex;gap:3px;flex:0 0 auto;flex-wrap:wrap;align-items:center;}
 .tsm-tab{display:inline-flex;align-items:center;gap:4px;
-  background:#232833;border:1px solid #2e3440;color:#8a93a3;border-radius:6px;
+  background:#232833;border:1px solid var(--ok-line-2);color:var(--ok-dim);border-radius:6px;
   padding:3px 6px 3px 8px;font-size:11px;cursor:pointer;user-select:none;
   max-width:200px;}
 .tsm-tab:hover{background:#2b3140;color:#c9cfda;}
@@ -56,19 +58,19 @@ const CSS = `
   white-space:pre-wrap;word-break:break-all;}
 .tsm-modal-btns{display:flex;justify-content:flex-end;gap:8px;}
 .tsm-modal-btns .tsm-btn{padding:5px 14px;font-size:12px;}
-.tsm-modal-cancel{background:#2b3140;}
+.tsm-modal-cancel{background:var(--ok-panel);}
 .tsm-modal-ok{background:#8b3a3a;border-color:#b05252;color:#fff;}
 .tsm-modal-ok:hover{background:#a04545;}
-.tsm-tab.tsm-add{background:transparent;border:1px dashed #3a4252;color:#8a93a3;
+.tsm-tab.tsm-add{background:transparent;border:1px dashed #3a4252;color:var(--ok-dim);
   padding:3px 10px;font-size:13px;font-weight:600;}
-.tsm-tab.tsm-add:hover{background:#2b3140;color:#d7dbe2;border-color:#4a5568;}
-.tsm-rename{width:140px;background:#12151b;color:#dde2ea;border:1px solid #4a5568;
+.tsm-tab.tsm-add:hover{background:var(--ok-panel);color:var(--ok-text);border-color:#4a5568;}
+.tsm-rename{width:140px;background:var(--ok-panel-2);color:#dde2ea;border:1px solid #4a5568;
   border-radius:4px;padding:1px 4px;font-size:11px;box-sizing:border-box;}
-.tsm-text{flex:1;min-height:120px;background:#12151b;color:#dde2ea;
-  border:1px solid #2e3440;border-radius:6px;padding:6px;font-size:12px;
-  font-family:ui-monospace,Consolas,monospace;resize:none;box-sizing:border-box;
+.tsm-text{flex:1;min-height:120px;background:var(--ok-panel-2);color:#dde2ea;
+  border:1px solid var(--ok-line-2);border-radius:6px;padding:6px;font-size:12px;
+  font-family:var(--ok-mono);resize:none;box-sizing:border-box;
   white-space:pre;overflow:auto;}
-.tsm-text:focus{outline:none;border-color:#4a5568;}
+.tsm-text:focus{outline:none;border-color:var(--ok-accent-2);}
 `;
 
 let cssDone = false;
@@ -83,6 +85,7 @@ function injectCSS() {
 function buildRoot(node) {
   const root = document.createElement("div");
   root.className = "tsm-root";
+  oktSurface(root);
 
   // 顶部：Tab索引 输入 + 联动切换按钮
   const top = document.createElement("div");
@@ -148,6 +151,7 @@ app.registerExtension({
     const onNodeCreated = nodeType.prototype.onNodeCreated;
     nodeType.prototype.onNodeCreated = function () {
       const r = onNodeCreated?.apply(this, arguments);
+      injectOpenkitUI();
       injectCSS();
       this._tabs = [""];
       this._names = [""];

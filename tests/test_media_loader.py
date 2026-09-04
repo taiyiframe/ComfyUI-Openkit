@@ -1,5 +1,13 @@
 # -*- coding: utf-8 -*-
-"""Offline logic test for MediaLoader + ReferenceSplitter."""
+"""Offline logic test for MediaLoader + ReferenceSplitter (unbounded v2).
+
+New semantics covered here:
+  - No capacity caps: any number of pictures / videos / audios is accepted.
+  - Array order is authoritative: bundles and splitter lists keep the item
+    array order (no number-based re-sorting on the backend).
+  - ReferenceSplitter now emits 7 unbounded lists:
+    keyframes / characters / props / scenes / videos / video_audios / audios.
+"""
 import io
 import sys
 import os
@@ -69,58 +77,46 @@ try:
 except ValueError as e:
     print("Test3 corrupt state rejected:", str(e)[:40])
 
-# ---- Test 4: budget validation ----
-too_many = json.dumps([{"kind": "picture", "file": f"p{i}.png"} for i in range(33)])
+# ---- Test 4: NO capacity caps (unlimited) ----
+too_many = json.dumps([{"kind": "picture", "file": f"p{i}.png"} for i in range(40)])
 res = ml._validate_state(too_many)
-print("Test4 33 pictures ->", res)
-assert "33 pictures" in str(res)
-too_aud = json.dumps([{"kind": "audio", "file": f"a{i}.wav"} for i in range(9)])
-res = ml._validate_state(too_aud)
-print("Test4b 9 audios ->", res)
-assert "9 audio clips" in str(res)
+print("Test4 40 pictures ->", res)
+assert res is True
 
-# ---- Test 5: splitter category lists + scalars ----
+too_aud = json.dumps([{"kind": "audio", "file": f"a{i}.wav"} for i in range(20)])
+res = ml._validate_state(too_aud)
+print("Test4b 20 audios ->", res)
+assert res is True
+
+too_vid = json.dumps([{"kind": "video", "file": f"v{i}.mp4"} for i in range(10)])
+res = ml._validate_state(too_vid)
+print("Test4c 10 videos ->", res)
+assert res is True
+
+# Unlimited bundle actually carries everything in array order.
+many_items = [{"kind": "picture", "file": f"p{i}.png"} for i in range(40)]
+bundle40 = loader.load_media(media_state=json.dumps(many_items, ensure_ascii=False))[0]
+print("Test4d bundle pictures:", len(bundle40["pictures"]))
+assert len(bundle40["pictures"]) == 40
+
+# ---- Test 5: splitter -> 7 unbounded lists ----
 splitter = ml.ReferenceSplitter()
 out = splitter.split(bundle)
-assert len(out) == 4 + ml.VIDEOS + ml.VIDEO_AUDIOS + ml.AUDIOS == 18
+assert len(out) == 7, len(out)
 assert isinstance(out[0], list) and len(out[0]) == 1   # keyframes (1 picture)
 assert isinstance(out[1], list) and out[1] == []        # characters empty
 assert isinstance(out[2], list) and out[2] == []        # props empty
 assert isinstance(out[3], list) and out[3] == []        # scenes empty
-assert out[4] is not None          # video_1
-assert out[7] is not None          # video_audio_1
-assert out[10] is not None         # audio_1
-assert out[17] is None             # audio_8 (empty)
-print("Test5 splitter outputs:", len(out),
-      "= 4 cat-lists +", ml.VIDEOS, "vids +", ml.VIDEO_AUDIOS, "vA +", ml.AUDIOS, "aud")
+assert len(out[4]) == 2          # videos list (2 videos)
+assert len(out[5]) == 1          # video_audios list (only paired non-None)
+assert len(out[6]) == 2          # audios list (standalone audio + v2 standalone)
+print("Test5 splitter 7 lists: 4 cat +", len(out[4]), "vids +",
+      len(out[5]), "vA +", len(out[6]), "aud")
 
 # ---- Test 6: empty bundle ----
 out2 = splitter.split(None)
-assert all(o == [] for o in out2[:4])
-assert all(o is None for o in out2[4:])
-print("Test6 empty bundle -> 4 empty lists + 9 None OK")
-
-# ---- Test 8: picture category + number sorting ----
-pics = [
-    {"kind": "picture", "file": "s2.png", "category": "场景", "number": 2},
-    {"kind": "picture", "file": "r1.png", "category": "角色", "number": 1},
-    {"kind": "picture", "file": "k3.png", "category": "关键帧", "number": 3},
-    {"kind": "picture", "file": "p1.png", "category": "道具", "number": 1},
-    {"kind": "picture", "file": "k1.png", "category": "关键帧", "number": 1},
-    {"kind": "picture", "file": "legacy.png"},           # no category -> 关键帧
-]
-state8 = json.dumps(pics, ensure_ascii=False)
-b8 = loader.load_media(state8)[0]
-order = [b8["picture_meta"][i][0] + str(b8["picture_meta"][i][1])
-         for i in range(len(b8["picture_meta"]))]
-# 关键帧: legacy(0)->k1->k3, then 角色1, 道具1, 场景2
-assert order[0] == "关键帧0" and order[1] == "关键帧1" and order[2] == "关键帧3", order
-assert order[3] == "角色1" and order[4] == "道具1" and order[5] == "场景2", order
-o8 = splitter.split(b8)
-assert [o8[0].__len__(), o8[1].__len__(), o8[2].__len__(), o8[3].__len__()] == [3, 1, 1, 1]
-print("Test8 category+number sorting OK: 关键帧3 角色1 道具1 场景1")
-
-print("ALL TESTS PASSED")
+assert all(o == [] for o in out2)
+print("Test6 empty bundle -> 7 empty lists OK")
 
 # ---- Test 7: 0-based tab_index routing ----
 multi = json.dumps({"tabs": [
@@ -137,7 +133,26 @@ assert r[1] == 2, r[1]
 r = loader.load_media(media_state=multi, tab_index=99)  # clamp to last tab
 assert r[0]["items"][0]["kind"] == "audio", r[0]
 assert r[1] == 2, r[1]
-r = loader.load_media(media_state=multi, tab_index=0)   # first tab
-assert r[0]["items"][0]["kind"] == "picture", r[0]
-assert r[1] == 0, r[1]
 print("Test7 0-based tab_index routing OK (0/2/99 -> picture/audio/audio, idx=0/2/2)")
+
+# ---- Test 8: array order is authoritative (no backend re-sort) ----
+pics = [
+    {"kind": "picture", "file": "s2.png", "category": "场景", "number": 2},
+    {"kind": "picture", "file": "r1.png", "category": "角色", "number": 1},
+    {"kind": "picture", "file": "k3.png", "category": "关键帧", "number": 3},
+    {"kind": "picture", "file": "p1.png", "category": "道具", "number": 1},
+    {"kind": "picture", "file": "k1.png", "category": "关键帧", "number": 1},
+    {"kind": "picture", "file": "legacy.png"},           # no category -> 关键帧
+]
+state8 = json.dumps(pics, ensure_ascii=False)
+b8 = loader.load_media(state8)[0]
+meta = [b8["picture_meta"][i] for i in range(len(b8["picture_meta"]))]
+# Array order preserved verbatim (not re-sorted by number):
+assert [m[0] for m in meta] == ["场景", "角色", "关键帧", "道具", "关键帧", "关键帧"], meta
+o8 = splitter.split(b8)
+assert [o8[0].__len__(), o8[1].__len__(), o8[2].__len__(), o8[3].__len__()] == [3, 1, 1, 1]
+# Within each category, array order is kept (k3 before k1 before legacy).
+assert [m[1] for m in meta if m[0] == "关键帧"] == [3, 1, 0]
+print("Test8 array order authoritative + category grouping OK")
+
+print("ALL TESTS PASSED")

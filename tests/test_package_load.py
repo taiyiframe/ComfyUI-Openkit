@@ -46,20 +46,21 @@ assert loader.VALIDATE_INPUTS("[]") is True
 assert loader.VALIDATE_INPUTS("{ not json") != True
 print("Loader contract OK: multi-tab -> 指定素材 / Tab索引")
 
-# Splitter contract.
+# Splitter contract (unbounded v2: 4 category lists + videos + video_audios + audios).
 splitter = nodes.NODE_CLASS_MAPPINGS["ReferenceSplitter"]
 sinputs = splitter.INPUT_TYPES()
 assert sinputs["required"]["references"][0] == "MEDIA_REFS"
 assert isinstance(sinputs["required"]["references"][1], dict)
 assert "tooltip" in sinputs["required"]["references"][1]
-assert splitter.RETURN_NAMES[:4] == ("关键帧", "角色", "道具", "场景")
-assert len(splitter.OUTPUT_TOOLTIPS) == 18
-assert len(splitter.RETURN_TYPES) == 18
-assert splitter.OUTPUT_IS_LIST[:4] == (True, True, True, True)
-assert all(v is False for v in splitter.OUTPUT_IS_LIST[4:])
-assert splitter.RETURN_TYPES[0] == "IMAGE" and splitter.RETURN_TYPES[4] == "IMAGE"
-assert splitter.RETURN_TYPES[7] == "AUDIO" and splitter.RETURN_TYPES[10] == "AUDIO"
-print("Splitter contract OK: 4 category lists + 3 IMAGE + 3 AUDIO + 8 AUDIO")
+assert splitter.RETURN_NAMES == ("关键帧", "角色", "道具", "场景", "视频", "视频音轨", "音频")
+assert len(splitter.OUTPUT_TOOLTIPS) == 7
+assert len(splitter.RETURN_TYPES) == 7
+assert splitter.OUTPUT_IS_LIST == (True,) * 7
+assert splitter.RETURN_TYPES[:4] == ("IMAGE", "IMAGE", "IMAGE", "IMAGE")
+assert splitter.RETURN_TYPES[4] == "IMAGE"
+assert splitter.RETURN_TYPES[5] == "AUDIO"
+assert splitter.RETURN_TYPES[6] == "AUDIO"
+print("Splitter contract OK: 4 category lists + videos + video_audios + audios (unbounded)")
 
 assert "nodes.media_routes" in sys.modules
 print("media_routes imported safely")

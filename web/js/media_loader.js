@@ -9,10 +9,12 @@
 import { app } from "../../../scripts/app.js";
 import { api } from "../../../scripts/api.js";
 import { OKT } from "./openkit_i18n.js";
+import { injectOpenkitUI, oktSurface } from "./openkit_ui.js";
 
 export const LOADER_NAME = "MediaLoader";
 export const SPLITTER_NAME = "ReferenceSplitter";
-export const MAX = { picture: 32, video: 3, audio: 8 };
+// No capacity caps: pictures, videos and audios all have NO upper limit.
+export const MAX = { picture: Infinity, video: Infinity, audio: Infinity };
 // Reference policy: 2-15s per reference clip, 15s total per media type.
 export const TRIM_FPS = 24;   // timeline fps; used for frame-stepping
 export const CLIP = { min: 2, max: 15, totalPerType: 15 };
@@ -67,11 +69,13 @@ export function renumberPictures(items) {
   });
 }
 
-/** Order the item list so pictures come first (sorted by category+number),
- *  then videos, then audios; each group keeps its previous relative order. */
+/** Order the item list so pictures come first (keeping their array order),
+ *  then videos, then audios; each group keeps its previous relative order.
+ *  The array order IS authoritative: display numbers are re-derived compactly
+ *  inside each category (see renumberPictures), so no number-based sorting
+ *  happens here. */
 export function reorderForDisplay(items) {
-  const pics = (items || []).filter((i) => i.kind === "picture")
-    .sort((a, b) => picSortKey(a) - picSortKey(b));
+  const pics = (items || []).filter((i) => i.kind === "picture");
   const vids = (items || []).filter((i) => i.kind === "video");
   const auds = (items || []).filter((i) => i.kind === "audio");
   return [...pics, ...vids, ...auds];
@@ -491,78 +495,91 @@ export const PANEL_H = 476;
 export const NODE_W = 900;
 
 const CSS = `
-.mml-panel{font-family:system-ui,sans-serif;color:#d7dbe2;font-size:12px;
-  background:#191c22;border:1px solid #2a2f3a;border-radius:8px;padding:8px;
+.mml-panel{font-family:var(--ok-font);color:var(--ok-text);font-size:12px;
+  background:var(--ok-bg);border:1px solid var(--ok-line);border-radius:8px;padding:8px;
   display:flex;flex-direction:column;gap:6px;box-sizing:border-box;
   width:100%;height:100%;min-height:476px;overflow:hidden;}
 .mml-cols{flex:1;min-height:132px;display:grid;
-  grid-template-columns:minmax(0,7fr) minmax(0,3fr);
+  grid-template-columns:minmax(0,7fr) minmax(0,3fr) minmax(0,3fr);
   gap:9px;overflow:hidden;}
 .mml-col{display:flex;flex-direction:column;gap:5px;min-width:0;overflow:hidden;}
 .mml-modal .mml-panel{border:0;height:100%;min-height:0;}
 .mml-overlay{position:fixed;inset:0;z-index:10040;background:rgba(8,10,14,.62);
   display:flex;align-items:center;justify-content:center;}
-.mml-modal{width:min(960px,94vw);height:min(520px,92vh);background:#191c22;
+.mml-modal{width:min(960px,94vw);height:min(520px,92vh);background:var(--ok-bg);
   border:1px solid #303642;border-radius:10px;display:flex;flex-direction:column;
   overflow:hidden;box-shadow:0 24px 64px rgba(0,0,0,.55);}
 .mml-modalhead{display:flex;align-items:center;gap:10px;padding:9px 13px;
-  background:#1e222a;border-bottom:1px solid #2a2f3a;font-size:13px;
-  font-weight:500;color:#d7dbe2;font-family:system-ui,sans-serif;}
-.mml-modalhead button{margin-left:auto;background:none;border:0;color:#8a93a3;
+  background:#1e222a;border-bottom:1px solid var(--ok-line);font-size:13px;
+  font-weight:500;color:var(--ok-text);font-family:var(--ok-font);}
+.mml-modalhead button{margin-left:auto;background:none;border:0;color:var(--ok-dim);
   font-size:17px;cursor:pointer;}
 .mml-modalhead button:hover{color:#fff;}
 .mml-modalbody{flex:1;min-height:0;padding:8px;overflow:auto;}
 .mml-panel.drop{border-color:#6f86b8;background:#1d2330;}
 .mml-top{display:flex;align-items:center;gap:8px;flex:0 0 auto;}
-.mml-btn{background:#2b3140;border:1px solid #3a4252;color:#d7dbe2;border-radius:6px;
-  padding:4px 10px;font-size:11px;cursor:pointer;}
+.mml-btn{background:var(--ok-panel);border:1px solid #3a4252;color:var(--ok-text);border-radius:var(--ok-radius);
+  padding:4px 10px;font-size:11px;cursor:pointer;font-family:var(--ok-font);
+  transition:background var(--ok-transition), border-color var(--ok-transition), color var(--ok-transition);}
 .mml-btn:hover{background:#333b4d;}
 .mml-presetrow{flex:0 0 auto;display:flex;align-items:center;gap:5px;}
 .mml-presetlbl{font-size:10px;text-transform:uppercase;letter-spacing:.07em;
-  color:#6b7484;}
-.mml-preset{flex:1;min-width:0;background:#12151b;color:#c9cfda;
-  border:1px solid #2e3440;border-radius:6px;padding:3px 6px;font-size:11px;
-  font-family:system-ui,sans-serif;}
-.mml-preset:focus{outline:none;border-color:#4a5568;}
+  color:var(--ok-faint);}
+.mml-preset{flex:1;min-width:0;background:var(--ok-panel-2);color:#c9cfda;
+  border:1px solid var(--ok-line-2);border-radius:var(--ok-radius);padding:3px 6px;font-size:11px;
+  font-family:var(--ok-font);}
+.mml-preset:focus{outline:none;border-color:var(--ok-accent-2);}
 .mml-btn.mml-sm{padding:3px 9px;font-size:10px;}
 .mml-btn.mml-danger{border-color:#7a3a3a;color:#f0a0a0;}
 .mml-btn.mml-danger:hover{background:#3a2020;}
-.mml-presetname{flex:1;min-width:0;background:#12151b;color:#dde2ea;
-  border:1px solid #4a5568;border-radius:6px;padding:3px 7px;font-size:11px;
-  font-family:system-ui,sans-serif;}
-.mml-presetname:focus{outline:none;border-color:#6f86b8;}
-.mml-presetwarn{flex:1;min-width:0;font-size:10px;color:#e0a94c;overflow:hidden;
+.mml-presetname{flex:1;min-width:0;background:var(--ok-panel-2);color:#dde2ea;
+  border:1px solid #4a5568;border-radius:var(--ok-radius);padding:3px 7px;font-size:11px;
+  font-family:var(--ok-font);}
+.mml-presetname:focus{outline:none;border-color:var(--ok-accent-2);}
+.mml-presetwarn{flex:1;min-width:0;font-size:10px;color:var(--ok-warn);overflow:hidden;
   text-overflow:ellipsis;white-space:nowrap;}
 .mml-topspace{flex:1;}
-.mml-count{font-size:10px;color:#8a93a3;font-family:ui-monospace,monospace;}
-.mml-count.over{color:#f07070;}
-.mml-msg{flex:0 0 auto;font-size:10px;min-height:12px;color:#e0a94c;overflow:hidden;
+.mml-count{font-size:10px;color:var(--ok-dim);font-family:var(--ok-mono);}
+.mml-count.over{color:var(--ok-err);}
+.mml-msg{flex:0 0 auto;font-size:10px;min-height:12px;color:var(--ok-warn);overflow:hidden;
   text-overflow:ellipsis;white-space:nowrap;}
-.mml-msg.err{color:#f07070;}
+.mml-msg.err{color:var(--ok-err);}
 .mml-sec{flex:0 0 auto;display:flex;align-items:center;font-size:10px;
-  text-transform:uppercase;letter-spacing:.07em;color:#6b7484;}
+  text-transform:uppercase;letter-spacing:.07em;color:var(--ok-faint);}
 .mml-sec span{margin-left:auto;text-transform:none;letter-spacing:0;color:#5c6472;
-  font-family:ui-monospace,monospace;}
+  font-family:var(--ok-mono);}
 
-.mml-pics{flex:1;min-height:0;display:grid;
-  grid-template-columns:repeat(8,minmax(0,1fr));
-  grid-auto-rows:minmax(96px,1fr);gap:5px;}
-/* 视频区：每条缩短为约 1/3 高度（窄竖条），不再撑满右栏 */
-.mml-vids{flex:0 0 auto;display:grid;grid-template-rows:repeat(3,60px);gap:5px;
-  grid-template-columns:minmax(0,1fr);}
+/* 图片区：无数量上限，自适应列数（auto-fill），瓦片墙滚动渲染。
+   槽位长宽比 16/9（与参考帧 2730×1536 一致），cover 填满且几乎不裁切。 */
+.mml-pics{flex:1;min-height:0;overflow-y:auto;display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(118px,1fr));
+  grid-auto-rows:auto;gap:6px;align-content:start;padding-right:2px;
+  overscroll-behavior:contain;scrollbar-width:thin;}
+/* 视频/音频区：各占一列，无数量上限，行内滚动 */
+.mml-vids{flex:1;min-height:0;overflow-y:auto;display:grid;
+  grid-auto-rows:60px;gap:5px;grid-template-columns:minmax(0,1fr);
+  align-content:start;overscroll-behavior:contain;scrollbar-width:thin;}
 .mml-spacer{flex:0 0 auto;min-height:0;}
-/* 音频区：与视频同样高度、同样宽度，一行一个竖着排列 */
-.mml-auds{flex:0 0 auto;display:grid;grid-auto-rows:60px;gap:5px;
-  grid-template-columns:minmax(0,1fr);}
+/* 音频区：与视频一样，一行一个竖着排列，无上限滚动 */
+.mml-auds{flex:1;min-height:0;overflow-y:auto;display:grid;
+  grid-auto-rows:60px;gap:5px;grid-template-columns:minmax(0,1fr);
+  align-content:start;overscroll-behavior:contain;scrollbar-width:thin;}
+/* 每栏末尾的“添加”槽位 */
+.mml-addslot{border:1px dashed #2b313d;border-radius:var(--ok-radius);background:var(--ok-panel);
+  display:flex;align-items:center;justify-content:center;color:#4d5563;
+  font-size:11px;cursor:pointer;min-height:44px;gap:6px;
+  transition:border-color var(--ok-transition), background var(--ok-transition), color var(--ok-transition);}
+.mml-addslot:hover{border-color:#6f86b8;color:var(--ok-dim);}
+.mml-addslot.hot{border-color:#6f86b8;background:#1b2230;color:#9db4dc;}
 
-.mml-slot{border:1px dashed #2b313d;border-radius:6px;background:#141820;
+.mml-slot{border:1px dashed #2b313d;border-radius:var(--ok-radius);background:var(--ok-panel);
   display:flex;align-items:center;justify-content:center;gap:5px;color:#4d5563;
   font-size:10px;cursor:pointer;overflow:hidden;min-width:0;min-height:0;}
-.mml-slot:hover{border-color:#59637a;color:#8a93a3;}
+.mml-slot:hover{border-color:#59637a;color:var(--ok-dim);}
 .mml-slot.hot{border-color:#6f86b8;background:#1b2230;color:#9db4dc;}
-.mml-slot.filled{border-style:solid;border-color:#2e3440;background:#12151b;cursor:default;
+.mml-slot.filled{border-style:solid;border-color:var(--ok-line-2);background:var(--ok-panel-2);cursor:default;
   display:block;position:relative;min-width:0;min-height:0;overflow:hidden;}
-.mml-slot.filled.pic{border-color:#6d5527;}
+.mml-slot.filled.pic{border-color:var(--ok-accent-bg);aspect-ratio:16/9;}
 .mml-slot.filled.vid{border-color:#255c6b;}
 .mml-slot.filled.aud{border-color:#4c3d6e;}
 .mml-slot.dragging{opacity:.35;}
@@ -570,10 +587,10 @@ const CSS = `
 
 .mml-dims{position:absolute;right:3px;top:27px;padding:1px 4px;border-radius:4px;
   background:rgba(8,10,14,.85);color:#dfe4ec;font-size:8px;line-height:1.2;
-  font-family:ui-monospace,monospace;pointer-events:none;letter-spacing:0;
+  font-family:var(--ok-mono);pointer-events:none;letter-spacing:0;
   text-shadow:0 1px 2px rgba(0,0,0,.9);z-index:2;}
 .mml-dims:empty{display:none;}
-.mml-lightdims{font-size:10px;color:#8a93a3;font-family:ui-monospace,monospace;}
+.mml-lightdims{font-size:10px;color:var(--ok-dim);font-family:var(--ok-mono);}
 .mml-pic{position:absolute;left:0;right:0;top:24px;bottom:0;width:100%;
   object-fit:cover;object-position:center center;
   display:block;cursor:zoom-in;background:#0d1015;}
@@ -583,18 +600,18 @@ const CSS = `
   padding:2px 3px;background:rgba(10,12,16,.88);z-index:3;min-width:0;align-items:center;
   box-sizing:border-box;height:22px;border-bottom:1px solid rgba(255,255,255,.08);}
 .mml-piccat{flex:1 1 0;min-width:6.5ch;width:0;box-sizing:border-box;
-  font-family:ui-monospace,monospace;font-size:9px;background:rgba(255,255,255,.08);color:#ffffff;
+  font-family:var(--ok-mono);font-size:9px;background:rgba(255,255,255,.08);color:#ffffff;
   border:1px solid rgba(255,255,255,.2);border-radius:3px;padding:1px 2px;outline:none;height:18px;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:1;text-align:center;
   -webkit-appearance:none;appearance:none;}
 .mml-piccat option{background:#1c212b;color:#ffffff;}
 .mml-picnum{flex:0 0 auto;min-width:3ch;box-sizing:border-box;
-  font-family:ui-monospace,monospace;font-size:9px;background:transparent;color:#e0a94c;
+  font-family:var(--ok-mono);font-size:9px;background:transparent;color:var(--ok-accent-2);
   border:none;border-radius:3px;padding:1px 4px;outline:none;height:18px;
   text-align:center;opacity:1;font-weight:600;}
 .mml-piccat:focus{border-color:#ffffff;background:rgba(0,0,0,.15);}
-.mml-tag{font-family:ui-monospace,monospace;font-size:9px;white-space:nowrap;}
-.mml-tag.pic{color:#e0a94c;} .mml-tag.vid{color:#4cc3e0;} .mml-tag.aud{color:#b48ce8;}
+.mml-tag{font-family:var(--ok-mono);font-size:9px;white-space:nowrap;}
+.mml-tag.pic{color:var(--ok-accent-2);} .mml-tag.vid{color:var(--ok-video);} .mml-tag.aud{color:var(--ok-audio);}
 .mml-x{cursor:pointer;color:#7a8393;font-size:11px;line-height:1;}
 .mml-x:hover{color:#e05a5a;}
 
@@ -604,44 +621,44 @@ const CSS = `
   width:auto;border-radius:4px;object-fit:cover;background:#0d1015;
   flex-shrink:1;cursor:zoom-in;}
 .mml-meta{min-width:0;flex:1;}
-.mml-name{font-size:9px;color:#6b7484;overflow:hidden;text-overflow:ellipsis;
+.mml-name{font-size:9px;color:var(--ok-faint);overflow:hidden;text-overflow:ellipsis;
   white-space:nowrap;}
 .mml-play{width:20px;height:20px;border-radius:50%;border:1px solid #3a4252;background:#20242d;
   color:#c9cfda;font-size:9px;line-height:1;cursor:pointer;flex-shrink:0;
   display:flex;align-items:center;justify-content:center;padding:0;}
 .mml-play:hover{border-color:#59637a;}
-.mml-bar{flex:1;height:3px;background:#2a2f3a;border-radius:2px;min-width:16px;
+.mml-bar{flex:1;height:3px;background:var(--ok-line);border-radius:2px;min-width:16px;
   cursor:pointer;position:relative;}
 .mml-bar i{position:absolute;left:0;top:0;bottom:0;background:#7d63b8;border-radius:2px;
   display:block;width:0;}
-.mml-time{font-size:9px;color:#6b7484;font-family:ui-monospace,monospace;flex-shrink:0;}
-.mml-seg{display:inline-flex;border:1px solid #2e3440;border-radius:4px;overflow:hidden;
+.mml-time{font-size:9px;color:var(--ok-faint);font-family:var(--ok-mono);flex-shrink:0;}
+.mml-seg{display:inline-flex;border:1px solid var(--ok-line-2);border-radius:4px;overflow:hidden;
   flex-shrink:0;}
-.mml-seg button{background:none;border:0;color:#6b7484;font-size:9px;padding:1px 5px;
+.mml-seg button{background:none;border:0;color:var(--ok-faint);font-size:9px;padding:1px 5px;
   cursor:pointer;}
 .mml-seg button.on{background:#3a2f56;color:#e2d6f8;}
 .mml-power{cursor:pointer;color:#4d5563;font-size:11px;line-height:1;flex-shrink:0;
   user-select:none;}
-.mml-power.on{color:#7ec87e;}
+.mml-power.on{color:var(--ok-ok);}
 .mml-power:hover{color:#a8e6a8;}
 .mml-slot.filled.off{opacity:.42;border-style:dashed;}
-.mml-slot.filled.off .mml-power{opacity:1;color:#6b7484;}
+.mml-slot.filled.off .mml-power{opacity:1;color:var(--ok-faint);}
 .mml-slot.filled.off:hover{opacity:.7;}
 .mml-segstack{display:flex;flex-direction:column;align-items:center;gap:2px;
   flex-shrink:0;}
 .mml-segtag{font-size:9px;}
-.mml-trimok{border-color:#3e5240;color:#7ec87e;}
-.mml-trimbtn{cursor:pointer;color:#e0a94c;opacity:.65;font-size:15px;line-height:1;
+.mml-trimok{border-color:#3e5240;color:var(--ok-ok);}
+.mml-trimbtn{cursor:pointer;color:var(--ok-accent-2);opacity:.65;font-size:15px;line-height:1;
   flex-shrink:0;user-select:none;}
 .mml-trimbtn:hover{opacity:1;}
 .mml-trimbtn.on{opacity:1;text-shadow:0 0 6px rgba(224,169,76,.55);}
 .mml-tmover{position:fixed;inset:0;background:rgba(8,10,14,.72);z-index:10050;
   display:flex;align-items:center;justify-content:center;}
-.mml-tmmodal{width:min(640px,92vw);background:#191c22;border:1px solid #303642;
+.mml-tmmodal{width:min(640px,92vw);background:var(--ok-bg);border:1px solid #303642;
   border-radius:10px;box-shadow:0 24px 64px rgba(0,0,0,.55);display:flex;
-  flex-direction:column;overflow:hidden;font-family:system-ui,sans-serif;}
+  flex-direction:column;overflow:hidden;font-family:var(--ok-font);}
 .mml-tmhead{display:flex;align-items:center;gap:8px;padding:8px 12px;
-  border-bottom:1px solid #2a2f3a;background:#1b1f27;}
+  border-bottom:1px solid var(--ok-line);background:#1b1f27;}
 .mml-tmtitle{flex:1;min-width:0;font-size:12px;color:#dde2ea;overflow:hidden;
   text-overflow:ellipsis;white-space:nowrap;}
 .mml-tmstage{position:relative;background:#000;line-height:0;}
@@ -659,21 +676,21 @@ const CSS = `
 .mml-tmcorner.sw{left:-6px;bottom:-6px;cursor:nesw-resize;}
 .mml-tmcorner.se{right:-6px;bottom:-6px;cursor:nwse-resize;}
 .mml-tmcropbar{display:flex;align-items:center;gap:6px;}
-.mml-tmcropinfo{font-size:10px;color:#4cc3e0;font-family:ui-monospace,monospace;}
-.mml-tmaspect{background:#12151b;color:#c9cfda;border:1px solid #2e3440;
-  border-radius:6px;padding:2px 5px;font-size:11px;}
-.mml-btn.on{background:#173642;border-color:#4cc3e0;color:#9fe3f5;}
+.mml-tmcropinfo{font-size:10px;color:var(--ok-video);font-family:var(--ok-mono);}
+.mml-tmaspect{background:var(--ok-panel-2);color:#c9cfda;border:1px solid var(--ok-line-2);
+  border-radius:var(--ok-radius);padding:2px 5px;font-size:11px;}
+.mml-btn.on{background:#173642;border-color:var(--ok-video);color:#9fe3f5;}
 .mml-tmtimeline{position:relative;padding:8px 14px 4px;}
 .mml-tmwave{display:block;width:100%;height:46px;margin-bottom:2px;}
 .mml-tmruler{position:relative;height:16px;}
 .mml-tmtick{position:absolute;transform:translateX(-50%);font-size:9px;
-  color:#6b7484;}
+  color:var(--ok-faint);}
 .mml-tmtick::before{content:"";position:absolute;left:50%;top:-3px;width:1px;
   height:3px;background:#3a4252;}
-.mml-tmbar{position:relative;height:20px;background:#12151b;border-radius:5px;
+.mml-tmbar{position:relative;height:20px;background:var(--ok-panel-2);border-radius:5px;
   margin:2px 0 6px;cursor:pointer;}
 .mml-tmsel{position:absolute;top:0;bottom:0;background:#1f6f96;border-radius:5px;}
-.mml-tmhandle{position:absolute;top:-3px;bottom:-3px;width:9px;background:#4cc3e0;
+.mml-tmhandle{position:absolute;top:-3px;bottom:-3px;width:9px;background:var(--ok-video);
   border-radius:3px;transform:translateX(-50%);cursor:ew-resize;z-index:2;}
 .mml-tmhandle:hover{background:#7fd8ee;box-shadow:0 0 6px rgba(76,195,224,.7);}
 .mml-tmplayhead{position:absolute;top:-5px;bottom:-5px;width:2px;
@@ -685,44 +702,44 @@ const CSS = `
   border-top:5px solid #ffb84d;}
 .mml-tmnow{display:flex;gap:5px;align-items:center;height:14px;
   font-size:9px;color:#8a6a33;text-transform:uppercase;letter-spacing:.06em;}
-.mml-tmplaytime{color:#ffb84d;font-family:ui-monospace,monospace;
+.mml-tmplaytime{color:#ffb84d;font-family:var(--ok-mono);
   text-transform:none;letter-spacing:0;font-size:10px;}
 .mml-tmfoot{display:flex;align-items:center;gap:5px;padding:8px 12px 0;
   flex-wrap:wrap;}
 .mml-tmfoot.act{padding:8px 12px 4px;border-top:1px solid #23272f;margin-top:8px;}
 .mml-tmgap{width:8px;}
 .mml-tmspace{flex:1;}
-.mml-tmnum{width:52px;background:#12151b;color:#dde2ea;border:1px solid #2e3440;
-  border-radius:6px;padding:3px 6px;font-size:11px;text-align:right;
-  font-family:ui-monospace,monospace;}
-.mml-tmnum:focus{outline:none;border-color:#4cc3e0;}
+.mml-tmnum{width:52px;background:var(--ok-panel-2);color:#dde2ea;border:1px solid var(--ok-line-2);
+  border-radius:var(--ok-radius);padding:3px 6px;font-size:11px;text-align:right;
+  font-family:var(--ok-mono);}
+.mml-tmnum:focus{outline:none;border-color:var(--ok-video);}
 .mml-tmdash{color:#5c6472;font-size:11px;}
-.mml-tmoutside{font-size:10px;color:#f07070;white-space:nowrap;overflow:hidden;
+.mml-tmoutside{font-size:10px;color:var(--ok-err);white-space:nowrap;overflow:hidden;
   text-overflow:ellipsis;text-transform:none;letter-spacing:0;}
-.mml-tmplayhead.out{background:#f07070;
+.mml-tmplayhead.out{background:var(--ok-err);
   box-shadow:0 0 0 1px rgba(0,0,0,.65), 0 0 7px rgba(240,112,112,.85);}
-.mml-tmplayhead.out::before{border-top-color:#f07070;}
+.mml-tmplayhead.out::before{border-top-color:var(--ok-err);}
 .mml-tmkeys{padding:0 12px 10px;font-size:10px;color:#5c6472;}
-.mml-tmreadout{font-size:11px;color:#8a93a3;font-family:ui-monospace,monospace;}
-.mml-tmreadout.bad{color:#f07070;}
+.mml-tmreadout{font-size:11px;color:var(--ok-dim);font-family:var(--ok-mono);}
+.mml-tmreadout.bad{color:var(--ok-err);}
 .mml-btn.primary{background:#1f4f7d;border-color:#3d7fbf;color:#dbeafe;}
 .mml-trimrow{display:flex;align-items:center;flex-wrap:nowrap;gap:3px;
   padding:0 5px;height:100%;overflow:hidden;}
 .mml-trimlbl{font-size:9px;text-transform:uppercase;letter-spacing:.07em;
-  color:#6b7484;}
-.mml-triminput{width:38px;background:#12151b;color:#dde2ea;
-  border:1px solid #2e3440;border-radius:5px;padding:2px 6px;font-size:11px;}
-.mml-triminput:focus{outline:none;border-color:#4a5568;}
-.mml-trimdash{color:#6b7484;}
-.mml-trimof{font-size:10px;color:#6b7484;}
-.mml-trimerr{flex-basis:100%;font-size:10px;color:#f07070;}
+  color:var(--ok-faint);}
+.mml-triminput{width:38px;background:var(--ok-panel-2);color:#dde2ea;
+  border:1px solid var(--ok-line-2);border-radius:5px;padding:2px 6px;font-size:11px;}
+.mml-triminput:focus{outline:none;border-color:var(--ok-accent-2);}
+.mml-trimdash{color:var(--ok-faint);}
+.mml-trimof{font-size:10px;color:var(--ok-faint);}
+.mml-trimerr{flex-basis:100%;font-size:10px;color:var(--ok-err);}
 .mml-trimerr:empty{display:none;}
 
 .mml-order{flex:0 0 auto;background:#1a2230;border:1px solid #2b3a52;border-radius:6px;
   padding:4px 7px;height:42px;box-sizing:border-box;overflow:hidden;}
 .mml-order b{display:block;font-size:9px;text-transform:uppercase;letter-spacing:.07em;
   color:#6f86b8;font-weight:500;margin-bottom:1px;}
-.mml-order div{font-family:ui-monospace,monospace;font-size:9px;color:#9db4dc;
+.mml-order div{font-family:var(--ok-mono);font-size:9px;color:#9db4dc;
   line-height:1.35;overflow:hidden;}
 
 .mml-light{position:fixed;inset:0;z-index:10050;background:rgba(8,10,14,.75);
@@ -731,19 +748,19 @@ const CSS = `
   border-radius:10px;overflow:hidden;padding:8px;}
 .mml-lightbox img,.mml-lightbox video{max-width:76vw;max-height:68vh;display:block;}
 .mml-lightcap{display:flex;align-items:center;gap:8px;padding-top:6px;font-size:11px;
-  color:#8a93a3;}
+  color:var(--ok-dim);}
 .mml-helpbtn{margin-left:5px;width:13px;height:13px;line-height:1;padding:0;
-  border-radius:50%;border:1px solid #3a4252;background:#20242d;color:#8a93a3;
-  font-size:9px;cursor:pointer;font-family:system-ui,sans-serif;}
+  border-radius:50%;border:1px solid #3a4252;background:#20242d;color:var(--ok-dim);
+  font-size:9px;cursor:pointer;font-family:var(--ok-font);}
 .mml-helpbtn:hover{border-color:#6f86b8;color:#c9cfda;}
 .mml-help{position:fixed;z-index:10055;width:370px;max-height:min(560px,88vh);
   background:#1e222a;border:1px solid #3a4252;border-radius:9px;overflow:hidden;
   display:flex;flex-direction:column;box-shadow:0 14px 36px rgba(0,0,0,.55);
-  font-family:system-ui,sans-serif;}
+  font-family:var(--ok-font);}
 .mml-helphead{display:flex;align-items:center;padding:7px 10px;background:#232833;
-  border-bottom:1px solid #2a2f3a;font-size:11px;text-transform:uppercase;
-  letter-spacing:.07em;color:#8a93a3;}
-.mml-helphead button{margin-left:auto;background:none;border:0;color:#6b7484;
+  border-bottom:1px solid var(--ok-line);font-size:11px;text-transform:uppercase;
+  letter-spacing:.07em;color:var(--ok-dim);}
+.mml-helphead button{margin-left:auto;background:none;border:0;color:var(--ok-faint);
   font-size:13px;cursor:pointer;line-height:1;}
 .mml-helphead button:hover{color:#fff;}
 .mml-helpbody{overflow:auto;padding:9px 10px;}
@@ -1241,14 +1258,7 @@ class TrimModal {
 
   async captureFrame() {
     const panel = this.panel;
-    // Same limits a dropped file would hit, checked before doing any work.
-    if (panel.count("picture") >= MAX.picture) {
-      panel.say(`All ${MAX.picture} picture slots are full \u2014 remove one ` +
-        "before capturing a frame.", true);
-      panel.render();
-      this.close();
-      return;
-    }
+    // No count caps: an unlimited number of picture references is allowed.
 
     const v = this.media;
     const W = v.videoWidth, H = v.videoHeight;
@@ -1749,7 +1759,7 @@ class LoaderPanel {
     this.players = [];
     injectCSS();
 
-    this.root = el("div", { class: "mml-panel" });
+    this.root = oktSurface(el("div", { class: "mml-panel" }));
     this.picker = el("input", {
       type: "file", multiple: true, style: { display: "none" },
       accept: "image/*,video/*,audio/*",
@@ -1887,15 +1897,6 @@ class LoaderPanel {
         : /^(mp4|mov|mkv|webm|avi|m4v|mpe?g)$/.test(ext) ? "video"
         : /^(wav|mp3|flac|ogg|m4a|aac|opus)$/.test(ext) ? "audio" : null;
       if (!guess) { this.say(`${file.name}: unsupported file type.`, true); continue; }
-      if (this.count(guess) >= MAX[guess]) {
-        this.say(`All ${MAX[guess]} ${guess} slots are full — ${file.name} skipped.`, true);
-        continue;
-      }
-      if (guess === "audio" && audioCount(this.items) >= MAX.audio) {
-        this.say(`This loader takes ${MAX.audio} audio clips in total, and split video ` +
-          `soundtracks count too — ${file.name} skipped.`, true);
-        continue;
-      }
       if (guess === "video" && !caps.video) {
         this.say("Videos need PyAV or ffmpeg on the server.", true);
         continue;
@@ -1903,9 +1904,7 @@ class LoaderPanel {
       this.busy += 1; this.render();
       try {
         const info = await uploadFile(file);
-        // Don't spend an audio clip the budget can't cover — the soundtrack
-        // stays available, just switched off until room is made.
-        const budgetFull = audioCount(this.items) >= MAX.audio;
+        // A freshly uploaded video with audio always pairs its soundtrack.
         const pairable = info.kind === "video" && info.has_audio;
         const base = {
           kind: info.kind,
@@ -1915,7 +1914,7 @@ class LoaderPanel {
           width: info.width ?? null,
           height: info.height ?? null,
           has_audio: !!info.has_audio,
-          audio_mode: pairable && !budgetFull ? "paired" : "off",
+          audio_mode: pairable ? "paired" : "off",
         };
         // A picture always gets a category (forced dropdown) and a number:
         // it lands in "关键帧" at the next free number by default.
@@ -1924,9 +1923,6 @@ class LoaderPanel {
           base.number = nextPicNumber(this.items, "关键帧");
         }
         this.items.push(base);
-        if (pairable && budgetFull)
-          this.say(`${info.original || info.name} loaded with its audio off — ` +
-            `already using ${MAX.audio} audio clips.`, true);
       } catch (err) {
         this.say(`${file.name}: ${err.message}`, true);
       } finally {
@@ -2075,12 +2071,14 @@ class LoaderPanel {
     return node;
   }
 
-  /** An always-present empty slot: click to browse, drop to fill. */
-  emptySlot(kind, index) {
-    const slot = el("div", { class: "mml-slot",
-      title: `Empty ${kind} slot ${index} \u2014 click to browse or drop a file`,
+  /** A trailing "add" tile per column: click to browse, drop to fill.
+   *  Because there is no count cap, this is the only empty placeholder —
+   *  no fixed grid of unused slots is rendered. */
+  addSlot(kind) {
+    const slot = el("div", { class: "mml-addslot",
+      title: `Add ${kind} \u2014 click to browse or drop files`,
       onclick: () => this.picker.click() },
-      el("span", {}, `${kind} ${index}`));
+      el("span", {}, `+ ${kind}`));
     slot.addEventListener("dragover", (e) => {
       if (!e.dataTransfer?.types?.includes("Files")) return;
       e.preventDefault(); e.stopPropagation();
@@ -2136,12 +2134,12 @@ class LoaderPanel {
             onclick: () => { this.unloadPrompt = true; this.render(); } },
             "Clear media")
         : null,
-      el("span", { class: "mml-count" + (pics.length > MAX.picture ? " over" : "") },
-        `\u{1F5BC} ${pics.length} / ${MAX.picture}`),
-      el("span", { class: "mml-count" + (audioCount(this.items) > MAX.audio ? " over" : ""),
+      el("span", { class: "mml-count" },
+        `\u{1F5BC} ${pics.length}`),
+      el("span", { class: "mml-count",
         style: { marginLeft: "6px" },
         title: "Audio clips in play, including split video soundtracks" },
-        `\u266a ${audioCount(this.items)}/${MAX.audio}`)));
+        `\u266a ${audioCount(this.items)}`)));
 
     const select = el("select", { class: "mml-preset",
       title: "Load a saved reference set",
@@ -2203,9 +2201,6 @@ class LoaderPanel {
     const audio = audioCount(this.items);
     const dur = durations(this.items);
     const problems = [];
-    if (audio > MAX.audio)
-      problems.push(`${audio} audio clips in play (limit ${MAX.audio}); split ` +
-        "soundtracks count. Switch one to off.");
     if (dur.video > CLIP.totalPerType)
       problems.push(`Reference video totals ${dur.video.toFixed(1)}s ` +
         `(limit ${CLIP.totalPerType}s).`);
@@ -2226,12 +2221,13 @@ class LoaderPanel {
     kids.push(el("div", { class: "mml-msg" + (this.msgErr || problems.length ? " err" : "") },
       problems.length ? problems[0] : this.msg));
 
-    const left = el("div", { class: "mml-col" });
-    const right = el("div", { class: "mml-col" });
-    kids.push(el("div", { class: "mml-cols" }, left, right));
+    const colPic = el("div", { class: "mml-col" });
+    const colAud = el("div", { class: "mml-col" });
+    const colVid = el("div", { class: "mml-col" });
+    kids.push(el("div", { class: "mml-cols" }, colPic, colAud, colVid));
 
-    left.append(el("div", { class: "mml-sec" }, "pictures",
-      el("span", {}, `${pics.length}/${MAX.picture}`)));
+    colPic.append(el("div", { class: "mml-sec" }, "图片",
+      el("span", {}, `${pics.length}`)));
     const picCells = [];
     pics.forEach((it) => {
       const tag = (tags.get(it) || "").slice(1, -1);
@@ -2271,15 +2267,39 @@ class LoaderPanel {
           el("span", { class: "mml-x", title: "Remove",
             onclick: () => this.remove(it) }, "\u2715"))), it));
     });
-    for (let i = pics.length; i < MAX.picture; i++)
-      picCells.push(this.emptySlot("picture", i + 1));
-    left.append(el("div", { class: "mml-pics" }, picCells));
+    picCells.push(this.addSlot("图片"));
+    colPic.append(el("div", { class: "mml-pics" }, picCells));
 
-    right.append(el("div", { class: "mml-sec" }, "videos",
+    colAud.append(el("div", { class: "mml-sec" }, "音频",
+      el("span", {}, `${auds.length}`)));
+    const audCells = [];
+    auds.forEach((it) => {
+      const player = miniPlayer(viewURL(it.file), it.trim);
+      this.players.push(player);
+      const arow = el("div", { class: "mml-row" },
+          this.powerBtn(it),
+          player.btn,
+          el("div", { class: "mml-meta", style: { flex: "0 0 auto", maxWidth: "38%" } },
+            el("div", { class: "mml-tag aud" },
+              isOn(it) ? (tags.get(it) || "").slice(1, -1) : "off"),
+            el("div", { class: "mml-name", title: it.name }, it.name)),
+          player.bar, player.time,
+          this.trimBtn(it),
+          el("span", { class: "mml-x", title: "Remove",
+            onclick: () => this.remove(it) }, "\u2715"));
+      const acell = el("div",
+        { class: "mml-slot filled aud" + (isOn(it) ? "" : " off") },
+        arow);
+      audCells.push(this.reorderable(acell, it));
+    });
+    audCells.push(this.addSlot("音频"));
+    colAud.append(el("div", { class: "mml-auds" }, audCells));
+
+    colVid.append(el("div", { class: "mml-sec" }, "视频",
       el("button", { class: "mml-helpbtn",
         title: "What do off / paired / alone do?",
         onclick: (e) => { e.stopPropagation(); splitHelp(e.currentTarget); } }, "?"),
-      el("span", {}, `${vids.length}/${MAX.video}`)));
+      el("span", {}, `${vids.length}`)));
     const vidCells = [];
     vids.forEach((it) => {
       const mode = it.audio_mode || "off";
@@ -2320,12 +2340,6 @@ class LoaderPanel {
                     ? "Soundtrack becomes a separate reference, numbered after the videos"
                     : "Ignore this video's audio",
                 onclick: () => {
-                  if (turningOn && audioCount(this.items) >= MAX.audio) {
-                    this.say(`Already using ${MAX.audio} audio clips \u2014 ` +
-                      "switch another off first.", true);
-                    this.render();
-                    return;
-                  }
                   it.audio_mode = m;
                   this.commit();
                 } }, text);
@@ -2339,36 +2353,8 @@ class LoaderPanel {
         row);
       vidCells.push(this.reorderable(vcell, it));
     });
-    for (let i = vids.length; i < MAX.video; i++)
-      vidCells.push(this.emptySlot("video", i + 1));
-    right.append(el("div", { class: "mml-vids" }, vidCells));
-
-    right.append(el("div", { class: "mml-sec" }, "AUDIO",
-      el("span", {}, `${auds.length}/${MAX.audio}`)));
-    const audCells = [];
-    auds.forEach((it) => {
-      const player = miniPlayer(viewURL(it.file), it.trim);
-      this.players.push(player);
-      const arow = el("div", { class: "mml-row" },
-          this.powerBtn(it),
-          player.btn,
-          el("div", { class: "mml-meta", style: { flex: "0 0 auto", maxWidth: "38%" } },
-            el("div", { class: "mml-tag aud" },
-              isOn(it) ? (tags.get(it) || "").slice(1, -1) : "off"),
-            el("div", { class: "mml-name", title: it.name }, it.name)),
-          player.bar, player.time,
-          this.trimBtn(it),
-          el("span", { class: "mml-x", title: "Remove",
-            onclick: () => this.remove(it) }, "\u2715"));
-      const acell = el("div",
-        { class: "mml-slot filled aud" + (isOn(it) ? "" : " off") },
-        arow);
-      audCells.push(this.reorderable(acell, it));
-    });
-    for (let i = auds.length; i < MAX.audio; i++)
-      audCells.push(this.emptySlot("audio", i + 1));
-    right.append(el("div", { class: "mml-auds" }, audCells),
-      el("div", { class: "mml-spacer" }));
+    vidCells.push(this.addSlot("视频"));
+    colVid.append(el("div", { class: "mml-vids" }, vidCells));
 
     const order = [];
     pics.filter(isOn).forEach((i) => order.push((tags.get(i) || "").slice(1, -1)));
@@ -3000,6 +2986,7 @@ app.registerExtension({
       }
       if (!isLoader) return r;
 
+      injectOpenkitUI();
       injectCSS();
       const w = this.widgets?.find((w) => w.name === "media_state");
       if (w) {

@@ -18,14 +18,10 @@ import json
 
 from . import media_io
 
-# Panel capacity per media type. The per-video budget (9 pictures / 3
-# audio) is enforced by a later node, not here: pictures are free up to the
-# panel's own limit, videos stay at 3, audios at 8.
-PICTURES = 32
-VIDEOS = 3
-VIDEO_AUDIOS = 3
-AUDIOS = 8
-
+# No capacity caps: pictures, videos, video soundtracks and audios all have
+# NO upper limit. Every item is forwarded in array order; the bundle and the
+# splitter lists never clip. (Downstream model budgets, if any, are the
+# consumer's concern, not this loader's.)
 MEDIA_REFS = "MEDIA_REFS"
 
 DEFAULT_TAB_NAME = "Tab 1"
@@ -119,10 +115,6 @@ def _partition(items):
     return pictures, videos, video_audios, audios
 
 
-def _pad(seq, n):
-    return list(seq or []) + [None] * (n - len(seq or []))
-
-
 def _trim(item):
     trim = item.get("trim") if isinstance(item, dict) else None
     if not isinstance(trim, dict):
@@ -141,15 +133,7 @@ def _trim(item):
 def _validate_tab(items):
     if not isinstance(items, list):
         return None
-    pics = sum(1 for i in items if i.get("kind") == "picture")
-    vids = sum(1 for i in items if i.get("kind") == "video")
-    auds = sum(1 for i in items if i.get("kind") == "audio")
-    if pics > PICTURES:
-        return f"{pics} pictures loaded; this panel accepts up to {PICTURES}."
-    if vids > VIDEOS:
-        return f"{vids} videos loaded; this panel accepts up to {VIDEOS}."
-    if auds > AUDIOS:
-        return f"{auds} audio clips loaded; this panel accepts up to {AUDIOS}."
+    # No capacity caps: any number of pictures/videos/audios is accepted.
     return None
 
 
@@ -168,10 +152,10 @@ def _build_bundle(items):
     """Build a MEDIA_REFS bundle from one tab's items."""
     pictures, videos, video_audios, audios = _partition(items)
 
-    # Pictures are ordered 关键帧 → 角色 → 道具 → 场景, each group by number,
-    # so both <Picture N> numbering and the splitter's category lists follow
-    # the same explicit user-set order.
-    pictures = sorted(pictures[:PICTURES], key=_pic_sort_key)
+    # Pictures keep their array order — the array IS the user's drag/order
+    # sequence. The panel keeps each category compactly numbered along that
+    # order, so <Picture N> numbering and the splitter's category lists follow
+    # the same explicit order. No count cap: every picture is forwarded.
     picture_meta = [(_pic_category(i), _pic_number(i)) for i in pictures]
 
     pic_t = [
@@ -185,15 +169,15 @@ def _build_bundle(items):
             end=_trim(i)[1],
             crop=i.get("crop"),
         )
-        for i in videos[:VIDEOS]
+        for i in videos
     ]
     vaud_t = [
         media_io.extract_audio(i["file"], start=_trim(i)[0], end=_trim(i)[1])
         if i else None
-        for i in video_audios[:VIDEO_AUDIOS]
+        for i in video_audios
     ]
     aud_t = []
-    for i in audios[:AUDIOS]:
+    for i in audios:
         if i.get("kind") == "video":
             aud_t.append(media_io.extract_audio(
                 i["file"], start=_trim(i)[0], end=_trim(i)[1]))
@@ -271,10 +255,9 @@ class MediaLoader:
     CATEGORY = "Openkit"
     DESCRIPTION = (
         "Multi-tab reference media loader. Every tab is a "
-        "complete, independent reference set (12 pictures / 3 videos / "
-        "3 audio clips, per-video budget); the tabs are not bounded by a "
-        "combined total. Use 'Tab索引' to pick the set for a given video "
-        "shot and read '指定素材'."
+        "complete, independent reference set (unlimited pictures / 3 videos / "
+        "8 audio clips); the tabs are not bounded by a combined total. Use "
+        "'Tab索引' to pick the set for a given video shot and read '指定素材'."
     )
 
     def load_media(self, media_state="[]", tab_index=0):
@@ -305,7 +288,13 @@ class MediaLoader:
 
 
 class ReferenceSplitter:
-    """Fan a `references` bundle out into individual slots."""
+    """Fan a `references` bundle out into unlimited lists.
+
+    Outputs four category picture lists plus one list per media stream type
+    (videos / video soundtracks / standalone audios). Every list has no count
+    cap and keeps the user's array order, so the whole bundle is always
+    forwarded without clipping.
+    """
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -316,7 +305,7 @@ class ReferenceSplitter:
                     {
                         "tooltip": "要拆分的参考 bundle，通常来自 "
                                    "MediaLoader 的「指定素材」输出。\n"
-                                   "超宽的 bundle 会被裁剪到前 N 个槽位。",
+                                   "所有列表无数量上限，按数组顺序完整输出。",
                     },
                 ),
             },
@@ -329,50 +318,35 @@ class ReferenceSplitter:
     INPUT_IS_LIST = True
 
     RETURN_TYPES = (
-        ("IMAGE",) * 4
-        + ("IMAGE",) * VIDEOS
-        + ("AUDIO",) * VIDEO_AUDIOS
-        + ("AUDIO",) * AUDIOS
+        ("IMAGE",) * 4 + ("IMAGE",) + ("AUDIO",) + ("AUDIO",)
     )
     RETURN_NAMES = (
-        ("关键帧", "角色", "道具", "场景")
-        + tuple(f"video_{i}" for i in range(1, VIDEOS + 1))
-        + tuple(f"video_audio_{i}" for i in range(1, VIDEO_AUDIOS + 1))
-        + tuple(f"audio_{i}" for i in range(1, AUDIOS + 1))
+        ("关键帧", "角色", "道具", "场景", "视频", "视频音轨", "音频")
     )
-    # The four category picture ports emit a LIST of IMAGE (one tensor per
-    # picture, ordered by the user-set number); everything else stays scalar.
-    OUTPUT_IS_LIST = (True,) * 4 + (False,) * (VIDEOS + VIDEO_AUDIOS + AUDIOS)
+    # Every output is an unbounded list: picture category lists, video list
+    # (each element one video's IMAGE batch), video-audio list and audio list.
+    OUTPUT_IS_LIST = (True,) * 7
     OUTPUT_TOOLTIPS = (
         tuple(
-            f"{cat}图片列表：本分类下所有参考图，按用户设定的编号升序排列。"
+            f"{cat}图片列表：本分类下所有参考图，按用户设定的顺序排列。"
             f"每张图为一个 IMAGE tensor，列表顺序即编号顺序（{cat} 1、{cat} 2…）。"
             "没有该分类图片时输出空列表。"
             for cat in ("关键帧", "角色", "道具", "场景")
         )
-        + tuple(
-            f"video_{i}（参考视频 {i}/{VIDEOS}）：输入 bundle 中第 {i} 个参考视频（IMAGE 序列）。"
-            f"没有第 {i} 个视频时输出为空。"
-            for i in range(1, VIDEOS + 1)
-        )
-        + tuple(
-            f"video_audio_{i}（视频配对音轨 {i}/{VIDEO_AUDIOS}）：第 {i} 个参考视频的配对音轨（AUDIO），"
-            f"仅在对应视频开启音轨并选择「配对」模式时才有输出，否则为空。"
-            for i in range(1, VIDEO_AUDIOS + 1)
-        )
-        + tuple(
-            f"audio_{i}（独立音频 {i}/{AUDIOS}）：输入 bundle 中第 {i} 个独立音频（AUDIO）。"
-            f"包含「独立」模式的视频音轨；没有第 {i} 个时输出为空。"
-            for i in range(1, AUDIOS + 1)
-        )
+        + ("视频列表：全部参考视频，每个元素是一个视频的 IMAGE 序列 batch。"
+           "无数量上限，按用户设定的数组顺序输出。",)
+        + ("视频音轨列表：开启「配对」模式并含音轨的视频的对应音轨（AUDIO），"
+           "顺序与视频列表中开启配对的视频一一对应。没有时输出空列表。",)
+        + ("独立音频列表：全部独立音频（含「独立」模式的视频音轨），"
+           "每个元素一个 AUDIO，无数量上限，按数组顺序输出。",)
     )
     FUNCTION = "split"
     CATEGORY = "Openkit"
     DESCRIPTION = (
-        "Split a references bundle into the four category picture "
-        "lists (keyframes / characters / props / scenes) plus video / "
-        "video_audio / audio slots. Picture lists follow the user-set number "
-        "order; bundles wider than the budget are clipped to the first N."
+        "Split a references bundle into the four category picture lists "
+        "(keyframes / characters / props / scenes) plus the video list, "
+        "video-audio list and audio list. Every output is an unbounded list "
+        "that keeps the user-set array order; nothing is clipped."
     )
 
     def split(self, references=None):
@@ -382,7 +356,7 @@ class ReferenceSplitter:
             else:
                 references = {}
         bundle = references if isinstance(references, dict) else {}
-        pics = (bundle.get("pictures") or [])[:PICTURES]
+        pics = bundle.get("pictures") or []
         meta = bundle.get("picture_meta") or []
         groups = {cat: [] for cat in PIC_CATEGORIES}
         for idx, t in enumerate(pics):
@@ -390,11 +364,17 @@ class ReferenceSplitter:
             if cat not in groups:
                 cat = "关键帧"
             groups[cat].append(t)
-        return tuple(
-            [groups["关键帧"], groups["角色"], groups["道具"], groups["场景"]]
-            + _pad((bundle.get("videos") or [])[:VIDEOS], VIDEOS)
-            + _pad((bundle.get("video_audios") or [])[:VIDEO_AUDIOS], VIDEO_AUDIOS)
-            + _pad((bundle.get("audios") or [])[:AUDIOS], AUDIOS)
+        # Video-audio list only carries the soundtracks that actually exist
+        # (paired mode with audio), keeping order with the paired videos.
+        vaud = [t for t in (bundle.get("video_audios") or []) if t is not None]
+        return (
+            groups["关键帧"],
+            groups["角色"],
+            groups["道具"],
+            groups["场景"],
+            bundle.get("videos") or [],
+            vaud,
+            bundle.get("audios") or [],
         )
 
 
