@@ -1694,6 +1694,11 @@ function applyPreviewCrop(videoEl, item) {
 
 /* --------------------------------------------------------- audio player */
 
+/* Module-wide single-player guard: only ONE audio may sound at a time. When a
+ * new clip starts, the previously playing one is stopped automatically, so
+ * multiple audio rows can never mix playback. */
+let __activePlayer = null;
+
 function miniPlayer(url, trim) {
   const fill = el("i");
   const bar = el("div", { class: "mml-bar" }, fill);
@@ -1702,6 +1707,12 @@ function miniPlayer(url, trim) {
   let audio = null;
 
   const fmt = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
+  const cur = {
+    stop() {
+      if (audio) { audio.pause(); btn.textContent = "\u25b6"; }
+      if (__activePlayer === cur) __activePlayer = null;
+    },
+  };
   const ensure = () => {
     if (audio) return audio;
     audio = new Audio(url);
@@ -1713,6 +1724,7 @@ function miniPlayer(url, trim) {
         audio.pause();
         btn.textContent = "\u25b6";
         audio.currentTime = trim.start || 0;
+        if (__activePlayer === cur) __activePlayer = null;
         return;
       }
       if (audio.duration) {
@@ -1720,14 +1732,25 @@ function miniPlayer(url, trim) {
         time.textContent = fmt(audio.currentTime);
       }
     });
-    audio.addEventListener("ended", () => { btn.textContent = "\u25b6"; });
+    audio.addEventListener("ended", () => {
+      btn.textContent = "\u25b6";
+      if (__activePlayer === cur) __activePlayer = null;
+    });
     return audio;
   };
   btn.addEventListener("click", (e) => {
     e.stopPropagation();
     const a = ensure();
-    if (a.paused) { a.play().catch(() => {}); btn.textContent = "\u23f8"; }
-    else { a.pause(); btn.textContent = "\u25b6"; }
+    if (a.paused) {
+      // Single-instance playback: stop any other clip first, never mix.
+      if (__activePlayer && __activePlayer !== cur) __activePlayer.stop();
+      a.play().catch(() => {});
+      btn.textContent = "\u23f8";
+      __activePlayer = cur;
+    } else {
+      a.pause(); btn.textContent = "\u25b6";
+      if (__activePlayer === cur) __activePlayer = null;
+    }
   });
   bar.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -1735,7 +1758,7 @@ function miniPlayer(url, trim) {
     const r = bar.getBoundingClientRect();
     if (a.duration) a.currentTime = ((e.clientX - r.left) / r.width) * a.duration;
   });
-  return { btn, bar, time, stop: () => { if (audio) { audio.pause(); } } };
+  return { btn, bar, time, stop: cur.stop };
 }
 
 /* ------------------------------------------------------------- uploading */
