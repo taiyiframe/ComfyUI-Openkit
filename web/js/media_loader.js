@@ -628,19 +628,32 @@ const CSS = `
 .mml-picbar{position:absolute;left:0;right:0;bottom:0;display:flex;align-items:center;
   gap:4px;padding:1px 4px;background:rgba(10,12,16,.82);min-width:0;overflow:hidden;}
 .mml-picmeta{position:absolute;left:0;right:0;top:0;display:flex;gap:3px;
-  padding:2px 3px;background:rgba(10,12,16,.88);z-index:3;min-width:0;align-items:center;
-  box-sizing:border-box;height:22px;border-bottom:1px solid rgba(255,255,255,.08);}
-.mml-piccat{flex:1 1 0;min-width:6.5ch;width:0;box-sizing:border-box;
-  font-family:var(--ok-mono);font-size:9px;background:rgba(255,255,255,.08);color:#ffffff;
-  border:1px solid rgba(255,255,255,.2);border-radius:3px;padding:1px 2px;outline:none;height:18px;
+  padding:2px 3px;background:transparent;z-index:3;min-width:0;align-items:center;
+  box-sizing:border-box;height:22px;border-bottom:none;}
+/* Title bar is fully see-through so the picture content shows through; only a
+   faint drop shadow keeps the yellow text legible over bright areas. The
+   wrapper shrinks to the text width so the arrow sits right next to the label. */
+.mml-picwrap{position:relative;flex:0 0 auto;box-sizing:border-box;
+  display:inline-block;height:18px;line-height:18px;}
+.mml-piccat{display:block;width:auto;height:100%;box-sizing:border-box;
+  font-family:var(--ok-mono);font-size:9px;background:transparent;color:var(--ok-accent-2);
+  border:none;border-radius:3px;padding:0 8px 0 1px;outline:none;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:1;text-align:center;
-  -webkit-appearance:none;appearance:none;}
+  text-shadow:0 1px 2px rgba(0,0,0,.75);
+  -webkit-appearance:none;appearance:none;cursor:pointer;}
 .mml-piccat option{background:#1c212b;color:#ffffff;}
+/* Dropdown affordance: a small triangle drawn with CSS borders, tinted with the
+   same accent as the read-only number so the whole title bar reads as one unit. */
+.mml-picwrap::after{content:"";position:absolute;right:1px;top:50%;margin-top:-2px;
+  width:0;height:0;pointer-events:none;
+  border-left:3px solid transparent;border-right:3px solid transparent;
+  border-top:4px solid var(--ok-accent-2);
+  filter:drop-shadow(0 1px 1px rgba(0,0,0,.75));}
+.mml-piccat:focus{background:rgba(255,255,255,.06);}
 .mml-picnum{flex:0 0 auto;min-width:3ch;box-sizing:border-box;
   font-family:var(--ok-mono);font-size:9px;background:transparent;color:var(--ok-accent-2);
   border:none;border-radius:3px;padding:1px 4px;outline:none;height:18px;
-  text-align:center;opacity:1;font-weight:600;}
-.mml-piccat:focus{border-color:#ffffff;background:rgba(0,0,0,.15);}
+  text-align:center;opacity:1;font-weight:600;text-shadow:0 1px 2px rgba(0,0,0,.75);}
 .mml-tag{font-family:var(--ok-mono);font-size:9px;white-space:nowrap;}
 .mml-tag.pic{color:var(--ok-accent-2);} .mml-tag.vid{color:var(--ok-video);} .mml-tag.aud{color:var(--ok-audio);}
 .mml-x{cursor:pointer;color:#7a8393;font-size:11px;line-height:1;}
@@ -2046,7 +2059,8 @@ class LoaderPanel {
       } },
       PIC_CATEGORIES.map((c) =>
         el("option", { value: c, selected: c === cat }, c)));
-    return el("div", { class: "mml-picmeta" }, select, numEl);
+    return el("div", { class: "mml-picmeta" },
+      el("span", { class: "mml-picwrap" }, select), numEl);
   }
 
 
