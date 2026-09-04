@@ -35,6 +35,9 @@ const PIC_WINDOW_THRESHOLD = 24;
 const PIC_WIN_MIN_W = 150;   // must match .mml-pics grid-template-columns minmax()
 const PIC_WIN_GAP = 6;       // must match .mml-pics gap
 const PIC_WIN_OVERSCAN = 2;  // extra rows kept above/below the viewport
+const PIC_MAX_COLS = 8;      // hard cap: picture grid never exceeds 8 columns;
+                             // any extra width is absorbed by scaling slots up
+                             // instead of adding more columns.
 
 export function picCategory(it) {
   const c = it && it.category;
@@ -2221,7 +2224,22 @@ class LoaderPanel {
     if (pics.length <= PIC_WINDOW_THRESHOLD) {
       const picCells = pics.map((it) => this._picCell(it, tags));
       picCells.push(this.addSlot("图片"));
-      colPic.append(el("div", { class: "mml-pics" }, picCells));
+      const grid = el("div", { class: "mml-pics" }, picCells);
+      colPic.append(grid);
+      /* 列数上限 8 列：根据实际宽度算列数，但不超过 PIC_MAX_COLS。
+         宽度继续增大时不再加列，而是让每列 1fr 等比放大，槽位随之变大。 */
+      const applyCols = () => {
+        const w = Math.max(1, grid.clientWidth);
+        let cols = Math.max(1, Math.floor((w + PIC_WIN_GAP) / (PIC_WIN_MIN_W + PIC_WIN_GAP)));
+        if (cols > PIC_MAX_COLS) cols = PIC_MAX_COLS;
+        grid.style.gridTemplateColumns = "repeat(" + cols + ",minmax(0,1fr))";
+      };
+      applyCols();
+      if (typeof ResizeObserver !== "undefined") {
+        const ro = new ResizeObserver(applyCols);
+        ro.observe(grid);
+        this._picGridRO = ro;   // keep a ref so later renders can drop it
+      }
       return;
     }
     const scroller = el("div", { class: "mml-pics mml-win" });
@@ -2234,6 +2252,7 @@ class LoaderPanel {
     const measure = () => {
       const w = Math.max(1, scroller.clientWidth);
       cols = Math.max(1, Math.floor((w + GAP) / (PIC_WIN_MIN_W + GAP)));
+      if (cols > PIC_MAX_COLS) cols = PIC_MAX_COLS;   // hard cap 8, scale slots up instead
       const slotW = (w - (cols - 1) * GAP) / cols;
       rowH = slotW * 9 / 16 + GAP;   // 16:9 aspect + row gap
       totalRows = Math.ceil((pics.length + 1) / cols);
@@ -2289,6 +2308,9 @@ class LoaderPanel {
   render() {
     this.players.forEach((p) => p.stop());
     this.players = [];
+    /* Drop observers from the previous render so repeated renders do not leak. */
+    if (this._picWinRO) { try { this._picWinRO.disconnect(); } catch (e) {} this._picWinRO = null; }
+    if (this._picGridRO) { try { this._picGridRO.disconnect(); } catch (e) {} this._picGridRO = null; }
 
     const { tags, extra } = computeTags(this.items);
     const pics = this.items.filter((i) => i.kind === "picture");
