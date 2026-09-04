@@ -855,7 +855,7 @@ const CSS = `
 .mml-topbtn{background:#2b3140;border:1px solid #3a4252;color:#d7dbe2;border-radius:6px;
   padding:4px 10px;font-size:11px;cursor:pointer;flex:0 0 auto;white-space:nowrap;}
 .mml-topbtn:hover{background:#333b4d;}
-/* Tab 页签（样式与多Tab字符串节点的 Tab 一致） */
+/* Tab 页签（样式与多Tab字符串节点的 Tab 完全一致） */
 .mml-tab{display:inline-flex;align-items:center;gap:4px;
   background:var(--ok-panel-2);border:1px solid var(--ok-line-2);color:var(--ok-dim);border-radius:6px;
   padding:3px 6px 3px 8px;font-size:11px;cursor:pointer;user-select:none;
@@ -867,12 +867,12 @@ const CSS = `
   border-radius:8px;padding:0 4px;font-family:ui-monospace,monospace;flex:0 0 auto;}
 /* 关闭按钮与标题保持较长间距（≥4 个汉字，em 单位随字号等比缩放，
    任意画布 zoom/节点缩放下视觉间距恒定），避免误触 */
-.mml-tab-x{flex:0 0 auto;margin-left:4.2em;width:14px;height:14px;line-height:12px;
-  text-align:center;border-radius:50%;color:#8a93a3;font-size:11px;cursor:pointer;}
-.mml-tab-x:hover{color:#ff6b6b;background:#454f63;}
-.mml-tab.mml-add{background:transparent;border:1px dashed #3a4252;color:#8a93a3;
-  font-size:14px;padding:2px 10px;}
-.mml-tab.mml-add:hover{background:#2b3140;color:#d7dbe2;border-color:#4a5568;}
+.mml-tab-x{flex:0 0 auto;margin-left:4.2em;font-size:11px;line-height:1;
+  color:var(--ok-dim);padding:1px 3px;border-radius:3px;cursor:pointer;z-index:2;}
+.mml-tab-x:hover{color:var(--ok-err);background:var(--ok-line-2);}
+.mml-tab.mml-add{background:transparent;border:1px dashed var(--ok-line-2);color:var(--ok-dim);
+  padding:3px 10px;font-size:13px;font-weight:600;}
+.mml-tab.mml-add:hover{background:var(--ok-panel);color:var(--ok-text);border-color:var(--ok-line-2);}
 .mml-tab-edit{width:120px;background:#171a21;color:#ddd;border:1px solid #4a5568;
   border-radius:3px;padding:1px 6px;font-size:11px;outline:none;}
 /* 关闭确认弹窗 */
@@ -1828,11 +1828,22 @@ async function uploadFile(file) {
 /* --------------------------------------------------------------- panel */
 
 // Stable per-item uid for container-level event delegation (picture wall).
-// Runtime-only field, never serialized; stable across re-renders per session.
+// Uses a module-level WeakMap keyed by object identity, so the uid is:
+//  - globally unique across every panel / tab / loader (no more 1,2,3,4,1,2,3
+//    collisions after workflow save/load, which used to persist a per-item
+//    \_uid\ field into media_state);
+//  - stable across re-renders of the same item object;
+//  - never written onto the item itself, so JSON.stringify(media_state) stays
+//    clean and uid can never leak into the serialized workflow again.
+const __picUidWM = new WeakMap();
 let __picUidSeq = 1;
 function picUid(it) {
-  if (it._uid == null) it._uid = __picUidSeq++;
-  return it._uid;
+  let u = __picUidWM.get(it);
+  if (u == null) {
+    u = __picUidSeq++;
+    __picUidWM.set(it, u);
+  }
+  return u;
 }
 /* P1 细粒度 patch：图片尺寸学习是高频 onload 事件（首次加载 N 张图会逐个
  * onload）。把每次 onload 的 commit 合并到同一帧的 rAF——一次 commit 写回
@@ -1957,13 +1968,18 @@ class LoaderPanel {
   widget() { return this.store ? null : this.node.widgets?.find((w) => w.name === "media_state"); }
 
   read() {
+    const strip = (arr) => {
+      (Array.isArray(arr) ? arr : []).forEach((it) => {
+        if (it && typeof it === "object" && "_uid" in it) delete it._uid;
+      });
+      return Array.isArray(arr) ? arr : [];
+    };
     if (this.store) {
-      try { const v = this.store.read(); return Array.isArray(v) ? v : []; }
+      try { return strip(this.store.read()); }
       catch (e) { return []; }
     }
     try {
-      const v = JSON.parse(this.widget()?.value || "[]");
-      return Array.isArray(v) ? v : [];
+      return strip(JSON.parse(this.widget()?.value || "[]"));
     } catch (e) { return []; }
   }
 
@@ -2276,7 +2292,7 @@ class LoaderPanel {
     container.addEventListener("click", (e) => {
       const t = e.target && e.target.closest ? e.target.closest("[data-pact]") : null;
       if (!t) return;
-      const item = this.items.find((x) => x._uid === Number(t.getAttribute("data-uid")));
+      const item = this.items.find((x) => picUid(x) === Number(t.getAttribute("data-uid")));
       if (!item) return;
       const act = t.getAttribute("data-pact");
       if (act === "crop") new ImageCropModal(this, item);
@@ -2815,7 +2831,7 @@ class MultiTabManager {
     this.node = node;
     this.tabs = [];   // { name, items, panel } — 每个 tab 一套完整素材
     this._curTab = 0;
-    this.root = el("div", { class: "mml-tabs" });
+    this.root = el("div", { class: "mml-tabs okt-root" });
     this.topbar = this.buildTopbar();
     this.head = el("div", { class: "mml-tabs-head" });
     this.body = el("div", { class: "mml-tabs-body" });
