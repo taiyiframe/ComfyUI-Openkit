@@ -75,6 +75,12 @@ const LANG_PAIRS = [
   ["Maximum {n} projects reached", "已达最多 {n} 个项目上限"],
   ["Enter project name…", "输入项目名称…"],
   ["untitled project", "未命名项目"],
+  ["Tab index", "Tab索引"],
+  ["Link switch", "联动切换"],
+  ["Tab index (0-based): selects which project the output provides",
+    "Tab索引（从0开始）：决定输出哪个项目的提示词JSON"],
+  ["Click to switch to the tab entered in the Tab index input and sync the output",
+    "点击后按 Tab索引 输入框的值切换到对应项目，并联动输出"],
 ];
 OKT.addPairs(LANG_PAIRS);
 const tr = (t, p) => OKT.tr(t, p);
@@ -169,6 +175,23 @@ const CSS = `
 .mspe-proj-rename{width:140px;background:var(--ok-bg);color:var(--ok-text);
   border:1px solid var(--ok-accent-2);border-radius:4px;padding:2px 6px;
   font-size:12px;font-family:var(--ok-font);outline:none;}
+/* 顶部控制栏：Tab索引 输入 + 联动切换（仿照素材加载节点） */
+.mspe-topbar{display:flex;align-items:center;gap:8px;flex:0 0 auto;
+  padding:4px 6px;background:var(--ok-panel-2);border:1px solid var(--ok-line-2);
+  border-radius:6px;}
+.mspe-toplabel{font-size:11px;color:var(--ok-dim);letter-spacing:.02em;flex:0 0 auto;}
+.mspe-topidx{width:56px;background:var(--ok-bg);color:var(--ok-text);
+  border:1px solid var(--ok-line-2);border-radius:4px;padding:3px 6px;
+  font-size:12px;font-family:var(--ok-mono);text-align:center;box-sizing:border-box;}
+.mspe-topidx:focus{outline:none;border-color:var(--ok-accent-2);}
+.mspe-topbtn{background:var(--ok-panel);border:1px solid var(--ok-line);color:var(--ok-text);
+  border-radius:var(--ok-radius);padding:4px 12px;font-size:11px;cursor:pointer;
+  font-family:var(--ok-font);flex:0 0 auto;transition:background .15s,border-color .15s;}
+.mspe-topbtn:hover{background:var(--ok-panel-2);border-color:var(--ok-line-2);}
+/* Tab 栏右侧 N/32 计数 */
+.mspe-proj-count{font-size:10px;color:var(--ok-dim);font-family:var(--ok-mono);
+  margin-left:auto;padding:2px 8px;background:var(--ok-bg);border:1px solid var(--ok-line-2);
+  border-radius:4px;flex:0 0 auto;}
 .mspe-content{flex:1;min-height:120px;overflow-y:auto;overflow-x:hidden;
   display:flex;flex-direction:column;gap:8px;padding-top:6px;}
 .mspe-textarea{width:100%;flex:1;min-height:80px;background:var(--ok-panel-2);color:var(--ok-text);
@@ -455,10 +478,31 @@ app.registerExtension({
         this._renderContent();
       });
       toolbar.append(spacer, previewBtn);
+      // 顶部控制栏：Tab索引 输入 + 联动切换（仿照素材加载节点最外层 Tab 设计）
+      const topbar = makeEl("div", "mspe-topbar");
+      const topLabel = makeEl("span", "mspe-toplabel", tr("Tab索引"));
+      const topInput = makeEl("input", "mspe-topidx");
+      topInput.type = "number";
+      topInput.min = "0";
+      topInput.step = "1";
+      topInput.value = "0";
+      topInput.title = tr("Tab索引（从0开始）：决定输出哪个项目的提示词JSON");
+      topInput.addEventListener("change", () => {
+        let v = parseInt(topInput.value, 10);
+        if (isNaN(v)) v = 0;
+        const maxV = Math.max(0, this._tabs.length - 1);
+        v = Math.max(0, Math.min(maxV, v));
+        topInput.value = String(v);
+        this._syncTopbar();
+      });
+      const linkBtn = makeEl("button", "mspe-topbtn", tr("联动切换"));
+      linkBtn.title = tr("点击后按 Tab索引 输入框的值切换到对应项目，并联动输出");
+      linkBtn.addEventListener("click", () => this._linkSwitch());
+      topbar.append(topLabel, topInput, linkBtn);
       const projectTabbar = makeEl("div", "mspe-projbar");
       const topTabbar = makeEl("div", "mspe-tabbar");
       const content = makeEl("div", "mspe-content");
-      root.append(toolbar, projectTabbar, topTabbar, content);
+      root.append(toolbar, topbar, projectTabbar, topTabbar, content);
 
       const domWidget = this.addDOMWidget("mspe_panel", "div", root, {
         getMinHeight: () => 360,
@@ -484,11 +528,11 @@ app.registerExtension({
         get: () => Math.max(440, this.size?.[0] || 440),
         set: () => {},
       });
-      domWidget.beforeQueued = () => { this._syncJson(); };
+      domWidget.beforeQueued = () => { this._syncJson(); this._syncTopbar(); };
       this.size[0] = Math.max(440, this.size[0] || 0);
       this.size[1] = Math.max(400, this.size[1] || 0);
 
-      this._dom = { root, toolbar, previewBtn, projectTabbar, topTabbar, content };
+      this._dom = { root, toolbar, previewBtn, topbar, topInput, projectTabbar, topTabbar, content };
 
       /* ---- 二次确认 ---- */
       this._confirm = (msg, onOk) => {
@@ -519,18 +563,19 @@ app.registerExtension({
         }
       };
 
-      /* ---- 最外层项目 Tab 渲染与操作 ---- */
+      /* ---- 最外层项目 Tab 渲染与操作（仿照素材加载节点：0-based 索引 + N/32 计数） ---- */
       this._renderProjectTabs = () => {
         const bar = this._dom.projectTabbar;
         if (!bar) return;
         bar.innerHTML = "";
         this._tabs.forEach((t, idx) => {
           const tab = makeEl("div", "mspe-proj-tab" + (idx === this._activeTab ? " active" : ""));
-          tab.title = tr("双击项目 Tab 标题可重命名");
-          const idxEl = makeEl("span", "mspe-proj-idx", String(idx + 1));
+          tab.title = tr("项目 {n}（点击切换 · 双击改名）", { n: idx });
           const nameEl = makeEl("span", "mspe-proj-name", t.name || tr("未命名项目"));
           nameEl.style.flex = "1 1 auto";
           nameEl.style.minWidth = "0";
+          // 索引徽章（0-based，与素材加载节点 Tab 索引一致）
+          const idxEl = makeEl("span", "mspe-proj-idx", String(idx));
           const x = makeEl("span", "mspe-proj-x", "×");
           x.title = tr("删除项目");
           x.addEventListener("click", (e) => {
@@ -542,13 +587,36 @@ app.registerExtension({
             this._renameProject(idx, nameEl);
           });
           tab.addEventListener("click", () => this._switchProject(idx));
-          tab.append(idxEl, nameEl, x);
+          tab.append(nameEl, idxEl, x);
           bar.append(tab);
         });
         const add = makeEl("div", "mspe-proj-add", "+");
         add.title = tr("添加项目");
         add.addEventListener("click", () => this._addProject());
         bar.append(add);
+        // N / 32 计数（仿照素材加载节点）
+        const count = makeEl("span", "mspe-proj-count",
+          `${this._tabs.length} / ${MAX_PROJECT_TABS}`);
+        bar.append(count);
+      };
+
+      /* ---- 顶部 Tab索引 输入框同步 ---- */
+      this._syncTopbar = () => {
+        const w = this.widgets?.find((x) => x.name === "tab_index");
+        if (w) {
+          if (w.options) w.options.max = Math.max(0, this._tabs.length - 1);
+          w.value = parseInt(this._dom?.topInput?.value, 10) || 0;
+        }
+      };
+
+      /* ---- 联动切换：按顶部 Tab索引 输入框的值切换项目 ---- */
+      this._linkSwitch = () => {
+        let v = parseInt(this._dom?.topInput?.value, 10);
+        if (isNaN(v)) v = 0;
+        const maxV = Math.max(0, this._tabs.length - 1);
+        v = Math.max(0, Math.min(maxV, v));
+        if (this._dom?.topInput) this._dom.topInput.value = String(v);
+        this._switchProject(v);
       };
 
       this._switchProject = (idx) => {
@@ -564,6 +632,16 @@ app.registerExtension({
         MODULES.forEach((m) => { if (m.type === "list_str") this._curItem[m.key] = 0; });
         this._curShot = 0;
         this._curMove = 0;
+        // 联动更新顶部 Tab索引 输入框 + tab_index widget（仿照素材加载节点）
+        if (this._dom?.topInput) {
+          this._dom.topInput.max = String(Math.max(0, this._tabs.length - 1));
+          this._dom.topInput.value = String(idx);
+        }
+        const w = this.widgets?.find((x) => x.name === "tab_index");
+        if (w) {
+          if (w.options) w.options.max = Math.max(0, this._tabs.length - 1);
+          w.value = idx;
+        }
         this._syncJson();
         this._renderProjectTabs();
         this._renderTopTabs();
@@ -585,7 +663,7 @@ app.registerExtension({
         const t = this._tabs[idx];
         this._confirm(
           tr("确定要删除第 {n} 个项目「{name}」吗？\n项目内所有模块与分镜将丢失且不可恢复。",
-             { n: idx + 1, name: t.name || tr("未命名项目") }),
+             { n: idx, name: t.name || tr("未命名项目") }),
           () => {
             this._tabs.splice(idx, 1);
             if (this._activeTab >= this._tabs.length) this._activeTab = this._tabs.length - 1;
@@ -595,6 +673,16 @@ app.registerExtension({
             MODULES.forEach((m) => { if (m.type === "list_str") this._curItem[m.key] = 0; });
             this._curShot = 0;
             this._curMove = 0;
+            // 更新顶部 Tab索引 输入框上限与值
+            if (this._dom?.topInput) {
+              this._dom.topInput.max = String(Math.max(0, this._tabs.length - 1));
+              this._dom.topInput.value = String(this._activeTab);
+            }
+            const w = this.widgets?.find((x) => x.name === "tab_index");
+            if (w) {
+              if (w.options) w.options.max = Math.max(0, this._tabs.length - 1);
+              w.value = this._activeTab;
+            }
             this._syncJson();
             this._renderProjectTabs();
             this._renderTopTabs();
@@ -1114,6 +1202,16 @@ app.registerExtension({
         this._tabs = tabs.map((t) => ({ name: t.name, data: normalizeData(t.data) }));
         this._activeTab = active;
         this._data = this._tabs[active].data;
+        // 初始化顶部 Tab索引 输入框
+        if (this._dom?.topInput) {
+          this._dom.topInput.max = String(Math.max(0, this._tabs.length - 1));
+          this._dom.topInput.value = String(active);
+        }
+        const wIdx = this.widgets?.find((x) => x.name === "tab_index");
+        if (wIdx) {
+          if (wIdx.options) wIdx.options.max = Math.max(0, this._tabs.length - 1);
+          wIdx.value = active;
+        }
         this._curModule = 0;
         this._previewMode = false;
         if (this._dom?.previewBtn) {
