@@ -2669,10 +2669,26 @@ function flash(text) {
  *  The bundle is taken from tab_references (the current Tab), never the
  *  merged references, so the splitter sees exactly the selected Tab's set. */
 export function addSplitter(node) {
-  const existing = (app.graph?._nodes || []).find((n) => n.type === SPLITTER_NAME);
+  // 一对一：每个素材加载节点最多展开一个拆分节点。只检查「归属当前节点」
+  // 的 splitter（通过 owner 标记），其它加载节点展开的拆分节点互不影响。
+  const existing = (app.graph?._nodes || []).find((n) => {
+    if (!n || n.type !== SPLITTER_NAME) return false;
+    if (n._mmlOwnerNodeId != null) return n._mmlOwnerNodeId === node.id;
+    // 旧 workflow 兼容：splitter 无 owner 标记但 references 输入（slot 0）
+    // 已被本节点接线 → 视为本节点展开的，匹配并向后迁移 owner，
+    // 避免点击「展开」时重复创建新 splitter 导致旧的变孤儿。
+    const linkId = n.inputs?.[0]?.link;
+    if (linkId != null && (node.outputs?.[0]?.links || []).includes(linkId)) {
+      n._mmlOwnerNodeId = node.id;
+      n.properties = n.properties || {};
+      n.properties.mmlOwnerNodeId = node.id;
+      return true;
+    }
+    return false;
+  });
   if (existing) {
     safeCanvasFocus(existing);
-    flash("已存在展开节点，全局共用一个，不会重复生成");
+    flash("本节点已展开拆分节点，不会重复生成");
     return existing;
   }
   let sp = null;
@@ -2683,6 +2699,10 @@ export function addSplitter(node) {
     flash("未找到展开节点定义，请重启 ComfyUI 后重试");
     return null;
   }
+  sp._mmlOwnerNodeId = node.id;
+  // 写入 properties 以便 workflow 保存/加载后仍保留「谁展开的」关联。
+  sp.properties = sp.properties || {};
+  sp.properties.mmlOwnerNodeId = node.id;
   app.graph.add(sp);
   try {
     sp.pos = [node.pos[0] + ((node.size?.[0] || NODE_W) + 60), node.pos[1]];
@@ -3302,6 +3322,31 @@ app.registerExtension({
       setTimeout(applyNow, 0);
       setTimeout(applyNow, 80);
       if (isSplitter) {
+        // 恢复「谁展开的」关联（workflow 保存/加载后）。properties 在
+        // configure 阶段才注入，onNodeCreated 时可能还没就绪，故延时补恢复。
+        const restoreOwner = () => {
+          if (this.properties?.mmlOwnerNodeId != null) {
+            this._mmlOwnerNodeId = this.properties.mmlOwnerNodeId;
+            return;
+          }
+          // 旧 workflow 兼容（d1c2aea 之前展开的 splitter 无 owner 标记）：
+          // 从 references 输入（slot 0）的连线源推断「谁展开的」并向后迁移，
+          // 避免加载旧图后点「展开」因 owner 不匹配而重复创建新 splitter。
+          const linkId = this.inputs?.[0]?.link;
+          if (linkId != null) {
+            const lk = app.graph?.links?.[linkId];
+            const src = lk && (app.graph?._nodes || []).find((x) => x && x.id === lk.origin_id);
+            if (src && src.type === LOADER_NAME) {
+              this._mmlOwnerNodeId = src.id;
+              this.properties = this.properties || {};
+              this.properties.mmlOwnerNodeId = src.id;
+            }
+          }
+        };
+        restoreOwner();
+        setTimeout(restoreOwner, 0);
+        setTimeout(restoreOwner, 120);
+        setTimeout(restoreOwner, 800); // 大 workflow 加载慢时兜底
         // Free bottom-right resize for the splitter. ComfyUI's built-in
         // computeSize already stops it from shrinking below full content
         // (all ports stay visible), while letting it grow freely.
@@ -3317,6 +3362,7 @@ app.registerExtension({
         this.onConnectionsChange = function (...a) {
           const rr = onC?.apply(this, a);
           setTimeout(() => syncSplitterPorts(this), 30);
+          setTimeout(restoreOwner, 0); // 连线变化时再补一次 owner 推断
           return rr;
         };
         return r;
