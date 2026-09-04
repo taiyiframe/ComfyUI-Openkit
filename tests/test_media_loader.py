@@ -99,24 +99,36 @@ bundle40 = loader.load_media(media_state=json.dumps(many_items, ensure_ascii=Fal
 print("Test4d bundle pictures:", len(bundle40["pictures"]))
 assert len(bundle40["pictures"]) == 40
 
-# ---- Test 5: splitter -> 7 unbounded lists ----
+# ---- Test 5: splitter -> 4 picture lists + numbered media ports ----
 splitter = ml.ReferenceSplitter()
 out = splitter.split(bundle)
-assert len(out) == 7, len(out)
+# 4 picture lists + MAX_AUDIOS(8) + MAX_VIDEOS(3) + MAX_VIDEO_AUDIOS(3) = 18
+assert len(out) == 4 + splitter.MAX_AUDIOS + splitter.MAX_VIDEOS + splitter.MAX_VIDEO_AUDIOS, len(out)
 assert isinstance(out[0], list) and len(out[0]) == 1   # keyframes (1 picture)
 assert isinstance(out[1], list) and out[1] == []        # characters empty
 assert isinstance(out[2], list) and out[2] == []        # props empty
 assert isinstance(out[3], list) and out[3] == []        # scenes empty
-assert len(out[4]) == 2          # videos list (2 videos)
-assert len(out[5]) == 1          # video_audios list (only paired non-None)
-assert len(out[6]) == 2          # audios list (standalone audio + v2 standalone)
-print("Test5 splitter 7 lists: 4 cat +", len(out[4]), "vids +",
-      len(out[5]), "vA +", len(out[6]), "aud")
+# Media order: audios → videos → video_audios. Out[4..11] = 8 audios.
+audios_out = out[4:4 + splitter.MAX_AUDIOS]
+videos_out = out[4 + splitter.MAX_AUDIOS:4 + splitter.MAX_AUDIOS + splitter.MAX_VIDEOS]
+vauds_out = out[4 + splitter.MAX_AUDIOS + splitter.MAX_VIDEOS:]
+# bundle has 2 audios → first two filled, rest None
+assert audios_out[0] is not None and audios_out[1] is not None
+assert all(a is None for a in audios_out[2:]), audios_out
+# 2 videos filled
+assert videos_out[0] is not None and videos_out[1] is not None
+assert videos_out[2] is None
+# 1 paired soundtrack (only video 1 paired)
+assert vauds_out[0] is not None
+assert all(v is None for v in vauds_out[1:]), vauds_out
+print("Test5 splitter 4 lists + numbered:", len(audios_out), "audios +",
+      len(videos_out), "vids +", len(vauds_out), "vA")
 
 # ---- Test 6: empty bundle ----
 out2 = splitter.split(None)
-assert all(o == [] for o in out2)
-print("Test6 empty bundle -> 7 empty lists OK")
+assert all(o == [] for o in out2[:4])
+assert all(o is None for o in out2[4:]), out2[4:]
+print("Test6 empty bundle -> 4 empty lists + media ports None OK")
 
 # ---- Test 7: 0-based tab_index routing ----
 multi = json.dumps({"tabs": [

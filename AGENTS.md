@@ -2,16 +2,16 @@
 
 ## Git 提交与推送规则（永久约定，所有 agent / 后续开发必须遵守）
 
-1. **只推送到 Gitee**：代码 `commit` 后，推送一律只执行 `git push gitee <branch>`（当前默认 `master`）。remote 名固定为 `gitee`。
-2. **GitHub 由镜像自动同步**：Gitee 仓库已配置「镜像仓库管理 → 自动同步到 GitHub」（Gitee 侧功能，目标 https://github.com/taiyiframe/ComfyUI-Openkit.git）。**严禁手动 `git push github` 或 `git push origin`**——`origin` / `github` 都是镜像目标，手动推送会与镜像冲突或造成重复推送。
-3. **每次 push 后验证**：`git push gitee` 完成后，**等待约 30 分钟**，再验证 GitHub 仓库的同步状态（用 `git ls-remote github refs/heads/master` 对比最新 commit hash 是否与 gitee 一致）。未到 30 分钟不要下"未同步"结论。
+1. **双平台同时推送**：代码 `commit` 后，推送同时执行 `git push gitee <branch>` 和 `git push github <branch>`（当前默认 `master`）。两个远端都要推，确保 gitee 与 github 都保持最新。
+2. **不自动提交**：**未经用户明确要求，不要自动 commit / push**。改动完成、验证通过后，先汇报并等待用户指示，用户说「提交 / 推」后再执行 commit 与双平台 push。
+3. **push 后验证**：双平台 push 完成后，用 `git ls-remote gitee refs/heads/master` 与 `git ls-remote github refs/heads/master` 对比两个远端 HEAD 是否都已到最新 commit，确保同步一致。
 4. 提交信息保持现有约定风格（`type(scope): summary`，如 `feat(media-loader): ...` / `fix(audio): ...` / `style(ui): ...`）。
 
 ## 远端参考（当前配置）
 
-- `gitee`  = https://gitee.com/dbmcp/ComfyUI-Openkit.git（**推送源，已带认证凭据**）
-- `github` = https://github.com/taiyiframe/ComfyUI-Openkit.git（**镜像目标，禁止手动推送**）
-- `origin` = 同上 GitHub（**镜像目标，禁止手动推送**）
+- `gitee`  = https://gitee.com/dbmcp/ComfyUI-Openkit.git（**推送远端之一**）
+- `github` = https://github.com/taiyiframe/ComfyUI-Openkit.git（**推送远端之一**）
+- `origin` = 同上 GitHub（**同样为推送远端**，push 时可一并使用；双平台推送指 gitee + github 两侧均同步）
 
 ## ComfyUI 运行环境（端口约定，自 2026-09-04 起永久生效）
 

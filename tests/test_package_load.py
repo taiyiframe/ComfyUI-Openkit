@@ -46,21 +46,28 @@ assert loader.VALIDATE_INPUTS("[]") is True
 assert loader.VALIDATE_INPUTS("{ not json") != True
 print("Loader contract OK: multi-tab -> 指定素材 / Tab索引")
 
-# Splitter contract (unbounded v2: 4 category lists + videos + video_audios + audios).
+# Splitter contract (dynamic v3: 4 category lists + numbered media ports
+# 音频→视频→视频音轨; backend declares fixed maximums, front-end shows only
+# the ports that carry data).
 splitter = nodes.NODE_CLASS_MAPPINGS["ReferenceSplitter"]
 sinputs = splitter.INPUT_TYPES()
 assert sinputs["required"]["references"][0] == "MEDIA_REFS"
 assert isinstance(sinputs["required"]["references"][1], dict)
 assert "tooltip" in sinputs["required"]["references"][1]
-assert splitter.RETURN_NAMES == ("关键帧", "角色", "道具", "场景", "视频", "视频音轨", "音频")
-assert len(splitter.OUTPUT_TOOLTIPS) == 7
-assert len(splitter.RETURN_TYPES) == 7
-assert splitter.OUTPUT_IS_LIST == (True,) * 7
+total_media = splitter.MAX_AUDIOS + splitter.MAX_VIDEOS + splitter.MAX_VIDEO_AUDIOS
+assert len(splitter.RETURN_TYPES) == 4 + total_media
+assert len(splitter.OUTPUT_TOOLTIPS) == 4 + total_media
+assert splitter.OUTPUT_IS_LIST == (True,) * 4 + (False,) * total_media
 assert splitter.RETURN_TYPES[:4] == ("IMAGE", "IMAGE", "IMAGE", "IMAGE")
-assert splitter.RETURN_TYPES[4] == "IMAGE"
-assert splitter.RETURN_TYPES[5] == "AUDIO"
-assert splitter.RETURN_TYPES[6] == "AUDIO"
-print("Splitter contract OK: 4 category lists + videos + video_audios + audios (unbounded)")
+# Media order: audios → videos → video_audios
+assert splitter.RETURN_TYPES[4:4 + splitter.MAX_AUDIOS] == ("AUDIO",) * splitter.MAX_AUDIOS
+assert splitter.RETURN_TYPES[4 + splitter.MAX_AUDIOS:4 + splitter.MAX_AUDIOS + splitter.MAX_VIDEOS] == ("IMAGE",) * splitter.MAX_VIDEOS
+assert splitter.RETURN_TYPES[4 + splitter.MAX_AUDIOS + splitter.MAX_VIDEOS:] == ("AUDIO",) * splitter.MAX_VIDEO_AUDIOS
+assert splitter.RETURN_NAMES[:4] == ("关键帧", "角色", "道具", "场景")
+assert splitter.RETURN_NAMES[4] == "音频1"
+assert splitter.RETURN_NAMES[4 + splitter.MAX_AUDIOS] == "视频1"
+assert splitter.RETURN_NAMES[4 + splitter.MAX_AUDIOS + splitter.MAX_VIDEOS] == "视频音轨1"
+print(f"Splitter contract OK: 4 category lists + {total_media} numbered media ports (audio→video→video_audio)")
 
 assert "nodes.media_routes" in sys.modules
 print("media_routes imported safely")

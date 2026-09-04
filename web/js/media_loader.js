@@ -573,12 +573,13 @@ const CSS = `
   transition:border-color var(--ok-transition), background var(--ok-transition);}
 .mml-miniadd:hover{border-color:var(--ok-accent-2);background:#1b2230;}
 
-/* 图片区：无数量上限，自适应列数（auto-fit：空轨道折叠，槽位随面板宽度拉伸
-   放大铺满，不再右侧留白），瓦片墙滚动渲染。
-   槽位长宽比 16/9（与参考帧 2730×1536 一致），contain 完整显示不裁切。 */
+/* 图片区：无数量上限，列数最多 8 列（PIC_MAX_COLS），超过则槽位随面板宽度
+   等比放大。行高用 minmax(min,1fr)：行数少时 1fr 自动撑满整列高度，
+   面板拉高时槽位随之适配下边框不再下方留白；行数多时回到 min 高度滚动。
+   槽位 contain 完整显示不裁切。 */
 .mml-pics{flex:1;min-height:0;overflow-y:auto;display:grid;
   grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
-  grid-auto-rows:auto;gap:6px;align-content:start;padding-right:2px;
+  grid-auto-rows:minmax(72px,1fr);gap:6px;align-content:stretch;padding-right:2px;
   overscroll-behavior:contain;scrollbar-width:thin;}
 /* 窗口化模式（图片数超阈值）：滚动容器 + 绝对定位行网格。
    .mml-win-inner 的高度充当 spacer 撑起滚动高度；.mml-win-row 是每行一个
@@ -590,17 +591,17 @@ const CSS = `
   box-sizing:border-box;}
 .mml-win-row > .mml-slot{width:100%;}
 .mml-winfill{min-height:0;}
-/* 视频/音频区：各占一列，无数量上限，行内滚动。行高不用固定 px，而是
-   随列区自身高度按容器查询比例缩放（下限 56px / 上限 140px），面板拉高或
-   缩小时槽位随之适配，始终可读。 */
-.mml-vids{flex:1;min-height:0;overflow-y:auto;display:grid;container-type:size;
-  grid-auto-rows:clamp(56px,14cqh,140px);gap:5px;grid-template-columns:minmax(0,1fr);
-  align-content:start;overscroll-behavior:contain;scrollbar-width:thin;}
+/* 视频区：各占一列，无数量上限，行内滚动。行高用 minmax(56px,1fr)：行数少时
+   1fr 撑满整列高度适配下边框；行数多时回到 56px 下限滚动。 */
+.mml-vids{flex:1;min-height:0;overflow-y:auto;display:grid;
+  grid-auto-rows:minmax(56px,1fr);gap:5px;grid-template-columns:minmax(0,1fr);
+  align-content:stretch;overscroll-behavior:contain;scrollbar-width:thin;}
 .mml-spacer{flex:0 0 auto;min-height:0;}
-/* 音频区：与视频一样，一行一个竖着排列，无上限滚动 */
-.mml-auds{flex:1;min-height:0;overflow-y:auto;display:grid;container-type:size;
-  grid-auto-rows:clamp(56px,14cqh,140px);gap:5px;grid-template-columns:minmax(0,1fr);
-  align-content:start;overscroll-behavior:contain;scrollbar-width:thin;}
+/* 音频区：与视频一样，一行一个竖着排列，无上限滚动。行高为视频的一半
+   （min 28px = 视频 56px 的一半，1fr 撑满时两列高度一致，音频自然矮一半）。 */
+.mml-auds{flex:1;min-height:0;overflow-y:auto;display:grid;
+  grid-auto-rows:minmax(28px,1fr);gap:5px;grid-template-columns:minmax(0,1fr);
+  align-content:stretch;overscroll-behavior:contain;scrollbar-width:thin;}
 /* 每栏末尾的“添加”槽位 */
 .mml-addslot{border:1px dashed #2b313d;border-radius:var(--ok-radius);background:var(--ok-panel);
   display:flex;align-items:center;justify-content:center;color:#4d5563;
@@ -616,16 +617,18 @@ const CSS = `
 .mml-slot.hot{border-color:#6f86b8;background:#1b2230;color:#9db4dc;}
 .mml-slot.filled{border-style:solid;border-color:var(--ok-line-2);background:var(--ok-panel-2);cursor:default;
   display:block;position:relative;min-width:0;min-height:0;overflow:hidden;}
-.mml-slot.filled.pic{border-color:var(--ok-accent-bg);aspect-ratio:16/9;}
+.mml-slot.filled.pic{border-color:var(--ok-accent-bg);}
 .mml-slot.filled.vid{border-color:#255c6b;}
 .mml-slot.filled.aud{border-color:#4c3d6e;}
 .mml-slot.dragging{opacity:.35;}
 .mml-slot.over{outline:1px solid #6f86b8;outline-offset:1px;}
 
-.mml-dims{position:absolute;right:3px;top:25px;padding:1px 4px;border-radius:4px;
-  background:rgba(8,10,14,.85);color:#dfe4ec;font-size:8px;line-height:1.2;
+.mml-dims{position:absolute;left:3px;top:2px;padding:0;border-radius:0;
+  background:transparent;color:#dfe4ec;font-size:8px;line-height:1.2;
   font-family:var(--ok-mono);pointer-events:none;letter-spacing:0;
-  text-shadow:0 1px 2px rgba(0,0,0,.9);z-index:2;}
+  text-shadow:1px 0 0 rgba(0,0,0,.75),-1px 0 0 rgba(0,0,0,.75),
+    0 1px 0 rgba(0,0,0,.75),0 -1px 0 rgba(0,0,0,.75),
+    0 1px 2px rgba(0,0,0,.6);z-index:2;}
 .mml-dims:empty{display:none;}
 .mml-lightdims{font-size:10px;color:var(--ok-dim);font-family:var(--ok-mono);}
 .mml-pic{position:absolute;left:0;right:0;top:0;bottom:0;width:100%;height:100%;
@@ -634,7 +637,7 @@ const CSS = `
 .mml-picbar{position:absolute;left:0;right:0;bottom:0;display:flex;align-items:center;
   gap:4px;padding:1px 4px;background:rgba(10,12,16,.82);min-width:0;overflow:hidden;}
 .mml-picmeta{position:absolute;left:auto;right:0;top:0;display:flex;gap:4px;justify-content:flex-end;
-  padding:2px 3px;background:transparent;z-index:3;min-width:0;max-width:100%;align-items:center;
+  padding:2px 3px;background:transparent;z-index:3;min-width:0;max-width:100%;align-items:flex-end;
   box-sizing:border-box;height:22px;border-bottom:none;}
 /* Title bar is fully see-through so the picture content shows through; the
    category dropdown + read-only number sit together at the top-right corner.
@@ -1944,6 +1947,8 @@ class LoaderPanel {
     (this.node._mmlPanels || []).forEach((p) => {
       if (p !== this && p.store === this.store) { p.items = p.read(); p.render(); }
     });
+    // 素材增删后，重算下游拆分器的动态输出端口数量。
+    try { syncSplittersFor(this.node); } catch (e) { /* no splitter wired */ }
   }
 
   applyWidgetLabels() {
@@ -2311,6 +2316,7 @@ class LoaderPanel {
     /* Drop observers from the previous render so repeated renders do not leak. */
     if (this._picWinRO) { try { this._picWinRO.disconnect(); } catch (e) {} this._picWinRO = null; }
     if (this._picGridRO) { try { this._picGridRO.disconnect(); } catch (e) {} this._picGridRO = null; }
+    if (this._avSyncRO) { try { this._avSyncRO.disconnect(); } catch (e) {} this._avSyncRO = null; }
 
     const { tags, extra } = computeTags(this.items);
     const pics = this.items.filter((i) => i.kind === "picture");
@@ -2349,6 +2355,10 @@ class LoaderPanel {
         : null,
       el("span", { class: "mml-count" },
         `\u{1F5BC} ${pics.length}`),
+      el("span", { class: "mml-count",
+        style: { marginLeft: "6px" },
+        title: "Video clips loaded" },
+        `\u25B6 ${vids.length}`),
       el("span", { class: "mml-count",
         style: { marginLeft: "6px" },
         title: "Audio clips in play, including split video soundtracks" },
@@ -2551,6 +2561,32 @@ class LoaderPanel {
 
     this.root.replaceChildren(...kids.filter(Boolean));
     localizeDom(this.root);
+    this.syncAudioHeight();
+  }
+
+  /* 音频行高 = 视频行高的一半（用户要求）。视频行用 1fr 撑满列高，行高随面板
+     缩放；这里读取视频区当前每行高度，把音频区 grid-auto-rows 同步为其一半，
+     并监听视频区尺寸变化自动重算，保证拉大/缩小面板时音频始终是视频的一半。 */
+  syncAudioHeight() {
+    const root = this.root;
+    const vids = root.querySelector(".mml-vids");
+    const auds = root.querySelector(".mml-auds");
+    const apply = () => {
+      if (!vids || !auds) return;
+      /* 视频区每行 = 一个 grid 子项（槽位或末尾 add 槽），数总子元素数而非
+         仅 .mml-slot，这样行高按真实行数均分，音频取其一半。 */
+      const rows = vids.children.length;
+      if (!rows) return;
+      const vh = vids.clientHeight / rows;
+      auds.style.gridAutoRows = Math.max(28, Math.round(vh / 2)) + "px";
+    };
+    apply();
+    if (this._avSyncRO) { try { this._avSyncRO.disconnect(); } catch (e) {} this._avSyncRO = null; }
+    if (typeof ResizeObserver !== "undefined" && vids) {
+      const ro = new ResizeObserver(() => requestAnimationFrame(apply));
+      ro.observe(vids);
+      this._avSyncRO = ro;
+    }
   }
 }
 
@@ -2838,6 +2874,8 @@ class MultiTabManager {
       this._topInput.value = String(i);
     }
     this.renderBody();
+    // 切换 Tab 后输出素材变化，同步下游拆分器的动态端口数量。
+    try { syncSplittersFor(this.node); } catch (e) { /* none wired */ }
   }
 
   /** 双击 Tab 标签：就地编辑标题。 */
@@ -3070,34 +3108,39 @@ const TOOLTIP_OUT_LOADER = {
     en: "Tab index (tab_index): the 0-based index of the tab currently selected and output.\nWhen the input index is out of range or the tab is empty, it clamps to a valid tab; this output reflects the final effective index.",
   },
 };
+// 拆分器输出提示：四个图片分类 list + 按编号的媒体独立端口，
+// 顺序为 音频 → 视频 → 视频音轨（与后端 RETURN_NAMES 一致）。
+// 端口动态增删后名称会变化，故统一用「端口索引」作为 key。
 const TOOLTIP_OUT_SPLITTER = {};
-for (const cat of ["关键帧", "角色", "道具", "场景"])
-  TOOLTIP_OUT_SPLITTER[cat] = {
+for (let i = 0; i < 4; i++) {
+  const cat = PIC_CATEGORIES[i];
+  TOOLTIP_OUT_SPLITTER[i] = {
     zh: `${cat}图片列表：本分类下所有参考图，按用户设定的编号升序排列。每张图为一个 IMAGE tensor，列表顺序即编号顺序（${cat} 1、${cat} 2…）。没有该分类图片时输出空列表。`,
     en: `${cat} picture list: every reference image in this category, ascending by the user-set number. Each image is an IMAGE tensor; list order equals number order (${cat} 1, ${cat} 2…). Outputs an empty list when there is none.`,
   };
-for (let i = 1; i <= VIDEOS; i++)
-  TOOLTIP_OUT_SPLITTER[`video_${i}`] = {
-    zh: `video_${i}（参考视频 ${i}/${VIDEOS}）：输入 bundle 中第 ${i} 个参考视频（IMAGE 序列）。没有第 ${i} 个视频时输出为空。`,
-    en: `video_${i} (reference video ${i}/${VIDEOS}): the ${i}th reference video (IMAGE sequence) in the input bundle. Empty when there is no ${i}th video.`,
-  };
-for (let i = 1; i <= VIDEO_AUDIOS; i++)
-  TOOLTIP_OUT_SPLITTER[`video_audio_${i}`] = {
-    zh: `video_audio_${i}（视频配对音轨 ${i}/${VIDEO_AUDIOS}）：第 ${i} 个参考视频的配对音轨（AUDIO），仅在对应视频开启音轨并选择「配对」模式时才有输出，否则为空。`,
-    en: `video_audio_${i} (paired soundtrack ${i}/${VIDEO_AUDIOS}): the paired AUDIO track of the ${i}th reference video. Only outputs when that video's audio is on and set to 配对; otherwise empty.`,
-  };
-for (let i = 1; i <= AUDIOS; i++)
-  TOOLTIP_OUT_SPLITTER[`audio_${i}`] = {
-    zh: `audio_${i}（独立音频 ${i}/${AUDIOS}）：输入 bundle 中第 ${i} 个独立音频（AUDIO）。包含「独立」模式的视频音轨；没有第 ${i} 个时输出为空。`,
-    en: `audio_${i} (standalone audio ${i}/${AUDIOS}): the ${i}th standalone AUDIO in the input bundle. Includes 独立-mode video soundtracks; empty when there is no ${i}th one.`,
-  };
+}
+function buildSplitterTooltips(audios, videos, vauds) {
+  const out = {};
+  const put = (i, zh, en) => { out[i] = { zh, en }; };
+  let k = 4;
+  for (let i = 0; i < audios; i++, k++)
+    put(k, `音频${i + 1}：输入 bundle 中第 ${i + 1} 个独立音频（AUDIO），含「独立」模式的视频音轨。没有第 ${i + 1} 个时输出为空。`,
+           `audio_${i + 1}: the ${i + 1}th standalone AUDIO in the input bundle. Includes 独立-mode video soundtracks; empty when there is no ${i + 1}th one.`);
+  for (let i = 0; i < videos; i++, k++)
+    put(k, `视频${i + 1}：输入 bundle 中第 ${i + 1} 个参考视频（IMAGE 序列）。没有第 ${i + 1} 个视频时输出为空。`,
+           `video_${i + 1}: the ${i + 1}th reference video (IMAGE sequence) in the input bundle. Empty when there is no ${i + 1}th video.`);
+  for (let i = 0; i < vauds; i++, k++)
+    put(k, `视频音轨${i + 1}：第 ${i + 1} 个参考视频的配对音轨（AUDIO），仅在对应视频开启音轨并选择「配对」模式时才有输出，否则为空。`,
+           `video_audio_${i + 1}: the paired AUDIO track of the ${i + 1}th reference video. Only outputs when that video's audio is on and set to 配对; otherwise empty.`);
+  return out;
+}
 
 function applyTooltips(node, inTips, outTips) {
   const L = OKT.lang === "zh" ? "zh" : "en";
   for (const inp of node.inputs || [])
     if (inTips[inp.name]) inp.tooltip = inTips[inp.name][L];
-  // 输出优先按端口索引取提示（loader 的中文端口名可能因后端改名而变化），
-  // 拆分器等仍按端口名取提示，两者都不存在时跳过。
+  // 输出优先按端口索引取提示（动态端口名称变化，索引稳定），
+  // 不存在时退回按端口名取提示。
   (node.outputs || []).forEach((out, i) => {
     const t = outTips[i] ?? (outTips[out.name] ?? null);
     if (t) out.tooltip = t[L];
@@ -3108,6 +3151,108 @@ function applyTooltips(node, inTips, outTips) {
       if (wd.options) wd.options.tooltip = inTips[wd.name][L];
     }
   }
+}
+
+/* ------------------------------------------------------------ splitter */
+
+// Port index → media kind for the splitter's per-item ports. After the four
+// picture-list ports come audios, then videos, then video soundtracks — the
+// same order the backend declares. Kept in sync with ReferenceSplitter.
+const SPLITTER_PORT_KIND = { audio: "audio", video: "video", vaud: "video_audio" };
+
+/**
+ * Read the reference count that the splitter's upstream MediaLoader is
+ * actually sending for the current tab: {audios, videos, vauds, found}.
+ * Parses the loader's media_state (multi-tab) plus its tab_index widget.
+ * Returns found:false when the input isn't a MediaLoader, in which case the
+ * caller keeps whatever ports are already on the node.
+ */
+function readSplitterSourceCounts(splitter) {
+  // The splitter's single input (references) carries a link to the loader.
+  const inp = splitter.inputs && splitter.inputs[0];
+  const link = inp && inp.link;
+  if (link == null) return { audios: 0, videos: 0, vauds: 0, found: false };
+  const g = app.graph;
+  if (!g || !g.links) return { audios: 0, videos: 0, vauds: 0, found: false };
+  const l = g.links[link];
+  if (!l) return { audios: 0, videos: 0, vauds: 0, found: false };
+  const src = g._nodes.find((n) => n.id === l.origin_id);
+  if (!src || src.type !== LOADER_NAME) return { audios: 0, videos: 0, vauds: 0, found: false };
+
+  let tabs = null;
+  try {
+    const raw = (src.widgets || []).find((w) => w.name === "media_state")?.value;
+    const data = raw ? JSON.parse(raw) : null;
+    if (Array.isArray(data)) tabs = data.map((t, i) => ({ name: t?.name || `Tab ${i}`, items: t?.items || [] }));
+    else if (data && Array.isArray(data.tabs)) tabs = data.tabs.map((t, i) => ({ name: t?.name || `Tab ${i}`, items: Array.isArray(t?.items) ? t.items : [] }));
+    else if (data && Array.isArray(data.items)) tabs = [{ name: data.name || "Tab 0", items: data.items }];
+  } catch (e) { tabs = null; }
+  if (!tabs || !tabs.length) return { audios: 0, videos: 0, vauds: 0, found: true };
+
+  let idx = 0;
+  const wIdx = (src.widgets || []).find((w) => w.name === "tab_index");
+  if (wIdx) { const v = parseInt(wIdx.value, 10); if (!isNaN(v)) idx = Math.max(0, Math.min(v, tabs.length - 1)); }
+  const items = tabs[Math.min(idx, tabs.length - 1)]?.items || [];
+
+  let audios = 0, videos = 0, vauds = 0;
+  for (const it of items) {
+    if (!it || it.enabled === false) continue;
+    if (it.kind === "audio") { audios++; continue; }
+    if (it.kind === "video") {
+      videos++;
+      if (it.has_audio && (it.audio_mode || "paired") === "paired") vauds++;
+    }
+  }
+  return { audios, videos, vauds, found: true };
+}
+
+/**
+ * Synchronize the splitter's output ports to the media actually present in
+ * the upstream tab: keep the 4 picture-list ports, then one port per audio,
+ * per video and per paired soundtrack (in that order). Uses addOutput /
+ * removeOutput so the canvas shows exactly the uploaded media, while the
+ * backend's fixed-length RETURN_TYPES keeps execution valid.
+ */
+function syncSplitterPorts(splitter) {
+  if (!splitter) return;
+  const { audios, videos, vauds, found } = readSplitterSourceCounts(splitter);
+  if (!found) return;              // not wired to a loader → leave as-is
+  const want = 4 + audios + videos + vauds;
+  const have = splitter.outputs?.length || 0;
+  const tips = buildSplitterTooltips(audios, videos, vauds);
+  // Merge with the 4 static picture tooltips (index-keyed).
+  for (let i = 0; i < 4; i++) if (TOOLTIP_OUT_SPLITTER[i]) tips[i] = TOOLTIP_OUT_SPLITTER[i];
+  if (have === want) { applyTooltips(splitter, TOOLTIP_IN, tips); return; }
+
+  // Rebuild only the media-port segment (indices 4..end). The four
+  // picture-list ports are never removed, so their wires always survive.
+  // Media ports are appended in the order 音频 → 视频 → 视频音轨.
+  const kinds = [];
+  for (let i = 0; i < audios; i++) kinds.push(["音频" + (i + 1), "AUDIO"]);
+  for (let i = 0; i < videos; i++) kinds.push(["视频" + (i + 1), "IMAGE"]);
+  for (let i = 0; i < vauds; i++) kinds.push(["视频音轨" + (i + 1), "AUDIO"]);
+
+  // Drop the old media segment (tail ports only, never the 4 picture ports).
+  while (splitter.outputs && splitter.outputs.length > 4) splitter.removeOutput(splitter.outputs.length - 1);
+  // Append the exact media ports for the current tab.
+  for (const [nm, ty] of kinds) splitter.addOutput(nm, ty);
+
+  splitter._mmlSynced = true;
+  splitter.setSize?.([splitter.size?.[0] || 300, splitter.computeSize?.()?.[1] || 300]);
+  try { splitter.graph?.setDirtyCanvas?.(true, true); } catch (e) { /* Vue redraws */ }
+  applyTooltips(splitter, TOOLTIP_IN, tips);
+}
+
+/**
+ * Re-sync every splitter on the canvas whose input is fed by the given node
+ * (used when a loader's media or tab changes).
+ */
+function syncSplittersFor(node) {
+  const g = app.graph;
+  if (!g || !g._nodes) return;
+  g._nodes.forEach((n) => {
+    if (n.type === SPLITTER_NAME) syncSplitterPorts(n);
+  });
 }
 
 /**
@@ -3161,6 +3306,19 @@ app.registerExtension({
         // computeSize already stops it from shrinking below full content
         // (all ports stay visible), while letting it grow freely.
         this.resizable = true;
+        // 动态端口：按输入 loader 当前 tab 的实际媒体数重建输出端口，
+        // 端口数跟随上传内容自动增减（音频 → 视频 → 视频音轨）。
+        const doSync = () => syncSplitterPorts(this);
+        setTimeout(doSync, 50);
+        setTimeout(doSync, 250);
+        setTimeout(doSync, 600);
+        // 连线建立/断开后再同步一次（例如展开时自动接入的 references 线）。
+        const onC = this.onConnectionsChange;
+        this.onConnectionsChange = function (...a) {
+          const rr = onC?.apply(this, a);
+          setTimeout(() => syncSplitterPorts(this), 30);
+          return rr;
+        };
         return r;
       }
       if (!isLoader) return r;

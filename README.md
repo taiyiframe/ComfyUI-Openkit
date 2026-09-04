@@ -158,15 +158,15 @@ Loads reference-media sets across multiple tabs on a single node. Each added tab
 - Soundtrack routing per video: paired / standalone / off / 每个视频的音轨路由：配对 / 独立 / 关闭
 - Drag sorting, enable/disable, delete, budget monitor / 拖拽排序、开关、删除、预算监控
 - Presets: save / load / delete, stored in `ComfyUI/input/openkit/presets/media_loader/` / 预设：保存/加载/删除，存放在 `ComfyUI/input/openkit/presets/media_loader/`
-- The splitter node (ReferenceSplitter) emits **7 list ports**: 4 category picture lists (关键帧 / 角色 / 道具 / 场景) + videos + video-audios + audios, array order is authoritative / 拆分节点输出 **7 个 list 端口**：4 个分类图片列表（关键帧 / 角色 / 道具 / 场景）+ 视频 + 视频音轨 + 音频，数组顺序即权威
+- The splitter node (ReferenceSplitter) emits **4 category picture list ports** (关键帧 / 角色 / 道具 / 场景) plus **numbered per-item media ports** in the order 音频 → 视频 → 视频音轨. The backend declares fixed maximums (8 audios / 3 videos / 3 video soundtracks); the canvas shows only the ports that actually carry data, so the port count follows the uploaded media automatically / 拆分节点输出 **4 个分类图片列表端口**（关键帧 / 角色 / 道具 / 场景）+ 按编号的独立媒体端口，顺序为 音频 → 视频 → 视频音轨。后端声明固定上限（音频 8 / 视频 3 / 视频音轨 3）；画布上只显示实际有数据的端口，端口数随上传媒体自动增减
 
 ---
 
 ### 6. ReferenceSplitter (素材拆分)
 
-Fan a `MEDIA_REFS` bundle out into **7 list ports**: 4 category picture lists (关键帧/角色/道具/场景), videos, video-audios (None-filtered) and audios — all **unbounded**.
+Fan a `MEDIA_REFS` bundle out into **4 category picture list ports** (关键帧/角色/道具/场景) plus **numbered per-item media ports** in the order 音频 → 视频 → 视频音轨. The backend declares fixed maximums (8 audios / 3 videos / 3 video soundtracks); the canvas shows only the ports that actually carry data.
 
-将 `MEDIA_REFS` bundle 拆分为 **7 个 list 端口**：4 个分类图片列表（关键帧/角色/道具/场景）、视频、视频音轨（过滤 None）与音频——全部**无上限**。
+将 `MEDIA_REFS` bundle 拆分为 **4 个分类图片列表端口**（关键帧/角色/道具/场景）+ 按编号的独立媒体端口，顺序为 音频 → 视频 → 视频音轨。后端声明固定上限（音频 8 / 视频 3 / 视频音轨 3）；画布上只显示实际有数据的端口。
 
 ---
 

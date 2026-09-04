@@ -288,13 +288,25 @@ class MediaLoader:
 
 
 class ReferenceSplitter:
-    """Fan a `references` bundle out into unlimited lists.
+    """Fan a `references` bundle out into per-item numbered outputs.
 
-    Outputs four category picture lists plus one list per media stream type
-    (videos / video soundtracks / standalone audios). Every list has no count
-    cap and keeps the user's array order, so the whole bundle is always
-    forwarded without clipping.
+    The four category picture lists come first, then the media streams each
+    get their own numbered port in the order 音频 (audios) → 视频 (videos) →
+    视频音轨 (video soundtracks). The backend declares the maximum possible
+    port count so ComfyUI's validator never walks off the RETURN_TYPES array;
+    the front-end only ever *shows* the ports that actually carry data and
+    hides the unused tail, so the canvas displays exactly the media that is
+    uploaded.
     """
+
+    # Maximum number of per-stream ports (matches the front-end caps).
+    MAX_AUDIOS = 8
+    MAX_VIDEOS = 3
+    MAX_VIDEO_AUDIOS = 3
+    # Aliases for the class-body tuple declarations (class body has no cls).
+    _MAX_AUDIOS = MAX_AUDIOS
+    _MAX_VIDEOS = MAX_VIDEOS
+    _MAX_VIDEO_AUDIOS = MAX_VIDEO_AUDIOS
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -305,7 +317,8 @@ class ReferenceSplitter:
                     {
                         "tooltip": "要拆分的参考 bundle，通常来自 "
                                    "MediaLoader 的「指定素材」输出。\n"
-                                   "所有列表无数量上限，按数组顺序完整输出。",
+                                   "图片按四个分类列表输出；音频、视频、视频音轨"
+                                   "各按编号拆成独立端口，数量随实际上传媒体动态显示。",
                     },
                 ),
             },
@@ -317,15 +330,29 @@ class ReferenceSplitter:
     # crash the framework's slice_dict with IndexError / KeyError).
     INPUT_IS_LIST = True
 
+    # Fixed maximum length so the validator's RETURN_TYPES[port_index] lookup
+    # is always in bounds; unused tail values are None.
+    _MAX_AUDIOS = 8
+    _MAX_VIDEOS = 3
+    _MAX_VIDEO_AUDIOS = 3
     RETURN_TYPES = (
-        ("IMAGE",) * 4 + ("IMAGE",) + ("AUDIO",) + ("AUDIO",)
+        ("IMAGE",) * 4
+        + ("AUDIO",) * _MAX_AUDIOS
+        + ("IMAGE",) * _MAX_VIDEOS
+        + ("AUDIO",) * _MAX_VIDEO_AUDIOS
     )
     RETURN_NAMES = (
-        ("关键帧", "角色", "道具", "场景", "视频", "视频音轨", "音频")
+        ("关键帧", "角色", "道具", "场景")
+        + tuple(f"音频{i + 1}" for i in range(_MAX_AUDIOS))
+        + tuple(f"视频{i + 1}" for i in range(_MAX_VIDEOS))
+        + tuple(f"视频音轨{i + 1}" for i in range(_MAX_VIDEO_AUDIOS))
     )
-    # Every output is an unbounded list: picture category lists, video list
-    # (each element one video's IMAGE batch), video-audio list and audio list.
-    OUTPUT_IS_LIST = (True,) * 7
+    # Only the four picture categories remain lists; media streams are single
+    # ports (one clip per port).
+    OUTPUT_IS_LIST = (
+        (True,) * 4
+        + (False,) * (_MAX_AUDIOS + _MAX_VIDEOS + _MAX_VIDEO_AUDIOS)
+    )
     OUTPUT_TOOLTIPS = (
         tuple(
             f"{cat}图片列表：本分类下所有参考图，按用户设定的顺序排列。"
@@ -333,20 +360,30 @@ class ReferenceSplitter:
             "没有该分类图片时输出空列表。"
             for cat in ("关键帧", "角色", "道具", "场景")
         )
-        + ("视频列表：全部参考视频，每个元素是一个视频的 IMAGE 序列 batch。"
-           "无数量上限，按用户设定的数组顺序输出。",)
-        + ("视频音轨列表：开启「配对」模式并含音轨的视频的对应音轨（AUDIO），"
-           "顺序与视频列表中开启配对的视频一一对应。没有时输出空列表。",)
-        + ("独立音频列表：全部独立音频（含「独立」模式的视频音轨），"
-           "每个元素一个 AUDIO，无数量上限，按数组顺序输出。",)
+        + tuple(
+            f"音频{i + 1}：输入 bundle 中第 {i + 1} 个独立音频（AUDIO），"
+            f"含「独立」模式的视频音轨。没有第 {i + 1} 个时输出为空。"
+            for i in range(_MAX_AUDIOS)
+        )
+        + tuple(
+            f"视频{i + 1}：输入 bundle 中第 {i + 1} 个参考视频（IMAGE 序列）。"
+            f"没有第 {i + 1} 个视频时输出为空。"
+            for i in range(_MAX_VIDEOS)
+        )
+        + tuple(
+            f"视频音轨{i + 1}：第 {i + 1} 个参考视频的配对音轨（AUDIO），"
+            f"仅在对应视频开启音轨并选择「配对」模式时才有输出，否则为空。"
+            for i in range(_MAX_VIDEO_AUDIOS)
+        )
     )
     FUNCTION = "split"
     CATEGORY = "Openkit"
     DESCRIPTION = (
         "Split a references bundle into the four category picture lists "
-        "(keyframes / characters / props / scenes) plus the video list, "
-        "video-audio list and audio list. Every output is an unbounded list "
-        "that keeps the user-set array order; nothing is clipped."
+        "(keyframes / characters / props / scenes) plus numbered per-item "
+        "media outputs in the order 音频 → 视频 → 视频音轨. Only the ports "
+        "that actually carry data are shown on canvas; the count follows the "
+        "uploaded media automatically."
     )
 
     def split(self, references=None):
@@ -367,14 +404,19 @@ class ReferenceSplitter:
         # Video-audio list only carries the soundtracks that actually exist
         # (paired mode with audio), keeping order with the paired videos.
         vaud = [t for t in (bundle.get("video_audios") or []) if t is not None]
+        audios = bundle.get("audios") or []
+        videos = bundle.get("videos") or []
+        # Pad every stream to the declared maximum (None for the missing tail).
+        def pad(seq, n):
+            return list(seq[:n]) + [None] * max(0, n - len(seq))
         return (
             groups["关键帧"],
             groups["角色"],
             groups["道具"],
             groups["场景"],
-            bundle.get("videos") or [],
-            vaud,
-            bundle.get("audios") or [],
+            *pad(audios, self.MAX_AUDIOS),
+            *pad(videos, self.MAX_VIDEOS),
+            *pad(vaud, self.MAX_VIDEO_AUDIOS),
         )
 
 
