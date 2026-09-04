@@ -15,6 +15,7 @@ Open, standardized ComfyUI utility node collection. No black-box encapsulation, 
 - **Multi-segment prompt visual editor** — Edit complex H3 JSON through hierarchical tabs, no raw JSON exposure
 - **Unified original UI style** — Every node inherits ComfyUI native variables with an original "Openkit Lite" amber accent design (tokens: `openkit_ui.js`), consistent, adaptive, low-overhead
 - **Full Chinese/English bilingual UI** — One-click language switch on every node (persisted), all static UI text localizes; JSON keys/values and your data are never touched
+- **Extreme rendering performance** — Windowed virtual rendering (only visible cards exist in the DOM), container-level event delegation, lazy thumbnails, rAF-batched dimension-learning commits, and proactive media-buffer release keep memory and CPU minimal on unlimited media
 - **Standard ComfyUI plugin structure** — Follows official conventions, easy to install and extend
 - **Fully documented** — Every input, output, and internal logic is explained
 
@@ -25,6 +26,7 @@ Open, standardized ComfyUI utility node collection. No black-box encapsulation, 
 - **多段提示词可视化编辑** — 通过层级化 Tab 编辑复杂 H3 JSON，无需接触原始 JSON
 - **统一原创 UI 风格** — 每个节点继承 ComfyUI 原生变量 + 原创「Openkit Lite」琥珀强调设计（tokens：`openkit_ui.js`），风格一致、自适应、低开销
 - **全插件中英双语** — 每个节点一键切换语言（自动记忆），全部静态 UI 文案同步本地化；JSON 键/值与用户数据绝不翻译
+- **极致渲染性能** — 窗口化虚拟渲染（DOM 中只存在可视区卡片）、容器级事件委托、缩略图懒加载、rAF 合并尺寸学习提交、重型媒体缓冲主动释放，素材无上限时内存与 CPU 占用极小
 - **标准 ComfyUI 插件结构** — 遵循官方规范，易于安装与扩展
 - **完整文档** — 每个输入、输出及内部逻辑均有说明
 
@@ -237,22 +239,26 @@ ComfyUI-Openkit/
 │   ├── __init__.py          # Node class & display name mappings / 节点类与显示名映射
 │   ├── json_extractor.py    # JsonExtractor implementation / JSON 提取节点
 │   ├── multiframe_ref.py    # MultiframeRef implementation / 多帧参考节点
-│   ├── choose_image.py      # ChooseImage implementation / 筛选图像节点
+│   ├── get_image.py         # ChooseImage implementation / 筛选图像节点
 │   ├── subject_ref_tag_replacement.py  # SubjectRefTagReplacement / 主体标签置换节点
-│   ├── media_loader.py      # MediaLoader implementation / 素材加载节点
+│   ├── media_loader.py      # MediaLoader + ReferenceSplitter / 素材加载与拆分节点
+│   ├── tab_string_multiline.py  # TabStringMultiline / 多Tab字符串节点
+│   ├── multi_segment_prompt_editor.py  # MultiSegmentPromptEditor / 多段提示词编辑器节点
 │   ├── media_io.py          # Image/video/audio decoding helpers / 图/视频/音频解码辅助
 │   └── media_routes.py      # Upload/probe/preset HTTP routes / 上传/探测/预设服务路由
 ├── web/
 │   └── js/
 │       ├── openkit_i18n.js    # Unified EN/CN i18n module / 统一中英双语模块
+│       ├── openkit_ui.js      # Lite Design tokens / 原创 UI 设计令牌
 │       ├── multiframe_ref.js  # Frontend dynamic input expansion / 前端动态输入扩展
 │       ├── media_loader.js    # Media loader panel / 素材加载面板
 │       ├── json_extractor_control.js  # Index-control dropdown i18n / 索引控制下拉本地化
 │       ├── tab_string_multiline.js  # Multi-tab string editor / 多Tab字符串编辑器
 │       └── multi_segment_prompt_editor.js  # Visual prompt editor / 可视化提示词编辑器
 ├── tests/
-│   ├── test_media_loader.py # Loader logic tests / 加载节点逻辑测试
-│   └── test_package_load.py # Package registration test / 插件包注册测试
+│   ├── test_media_loader.py # Loader/splitter logic tests / 加载拆分节点逻辑测试
+│   ├── test_package_load.py # Package registration test / 插件包注册测试
+│   └── test_all_nodes.py    # All-nodes regression tests / 全节点回归测试
 ├── requirements.txt         # Python dependencies / Python 依赖声明
 ├── pyproject.toml           # Project metadata / 项目元信息
 ├── .gitignore               # Git ignore rules / Git 忽略规则
