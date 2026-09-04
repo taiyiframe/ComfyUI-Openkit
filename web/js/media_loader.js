@@ -1735,7 +1735,13 @@ function miniPlayer(url, trim) {
   const fmt = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
   const cur = {
     stop() {
-      if (audio) { audio.pause(); btn.textContent = "\u25b6"; }
+      if (audio) {
+        audio.pause();
+        // P1 重型资源回收：主动清 src + load 释放媒体缓冲，不等 GC 延迟回收。
+        try { audio.removeAttribute("src"); audio.load(); } catch (e) {}
+        audio = null;
+        btn.textContent = "\u25b6";
+      }
       if (__activePlayer === cur) __activePlayer = null;
     },
   };
@@ -1827,6 +1833,22 @@ let __picUidSeq = 1;
 function picUid(it) {
   if (it._uid == null) it._uid = __picUidSeq++;
   return it._uid;
+}
+/* P1 细粒度 patch：图片尺寸学习是高频 onload 事件（首次加载 N 张图会逐个
+ * onload）。把每次 onload 的 commit 合并到同一帧的 rAF——一次 commit 写回
+ * 全部刚学到的尺寸，避免 N 次全量 commit + N 次全量 render + N 次 splitter
+ * 重同步。窗口化滚动重建行触发 onload 时同样只追加待提交面板，不会抖动。 */
+let __dimBatch = null;
+function scheduleDimCommit(panel) {
+  if (!__dimBatch) {
+    __dimBatch = { raf: 0, panels: new Set() };
+    __dimBatch.raf = requestAnimationFrame(() => {
+      const batch = __dimBatch;
+      __dimBatch = null;
+      batch.panels.forEach((p) => { try { p.commit(); } catch (e) { /* panel gone */ } });
+    });
+  }
+  __dimBatch.panels.add(panel);
 }
 
 class LoaderPanel {
@@ -2218,7 +2240,7 @@ class LoaderPanel {
               it.height = img.naturalHeight;
               badge.textContent = dimsLabel(it.width, it.height);
               img.title = dimsTitle(it.name, it.width, it.height);
-              this.commit();
+              scheduleDimCommit(this);
             }
           } });
         applyPreviewCrop(img, it);
