@@ -1,16 +1,33 @@
+# Python
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
+*.py[cod]
+*$py.class
 .Python
 *.egg-info/
 dist/
 build/
 .eggs/
 *.log
+*.log.*
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 系统 / 编辑器
 .DS_Store
 Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 环境
 .venv/
 venv/
 env/
 pkg/site/
+
+# 开发 / 测试（不随插件发布，仅本地开发用）
+tests/
+.preview/
+node_modules/
