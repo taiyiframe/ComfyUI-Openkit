@@ -221,6 +221,9 @@ class SubjectRefTagReplacement:
         if not matches:
             return [("", text)]
         sections = []
+        # 保留第一个标准段落之前的内容（如 JsonExtractor 的顶部自定义段落），不丢弃
+        if matches[0].start() > 0:
+            sections.append(("__prefix__", text[:matches[0].start()]))
         for i, m in enumerate(matches):
             name = m.group(1)
             start = m.start()
