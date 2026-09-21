@@ -31,3 +31,6 @@ pkg/site/
 tests/
 .preview/
 node_modules/
+
+# 历史资料库归档(不跟踪)
+arch/
