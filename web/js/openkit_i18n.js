@@ -298,6 +298,7 @@ import { app } from "../../../scripts/app.js";
     "ReferenceSplitter": ["素材拆分", "Reference Splitter"],
     "TabStringMultiline": ["多Tab字符串", "Multi-Tab String"],
     "MultiSegmentPromptEditor": ["多段提示词可视化编辑", "Multi-Segment Prompt Editor"],
+    "OpenkitMemoryCleanup": ["显存内存清理", "VRAM/RAM Cleanup"],
   };
 
   function titleFor(cls) {

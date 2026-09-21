@@ -7,6 +7,7 @@
 ### Added
 - docs/ 工程化文档目录
 - CHANGELOG.md
+- OpenkitMemoryCleanup：合并显存/内存清理为单节点（5 个独立开关 + 重试次数），零第三方依赖，ctypes 实现 Windows 内存读取与进程工作集清理
 
 ## [0.2.0] - 2026-09-21
 

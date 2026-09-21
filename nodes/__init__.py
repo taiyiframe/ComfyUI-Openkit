@@ -6,6 +6,7 @@ from .media_loader import MediaLoader, ReferenceSplitter
 from .tab_string_multiline import TabStringMultiline
 from .multi_segment_prompt_editor import MultiSegmentPromptEditor
 from .execution_time import OpenkitExecutionTime
+from .memory_cleanup import OpenkitMemoryCleanup
 from . import media_routes  # noqa: F401  (registers /openkit_media/* HTTP routes)
 
 NODE_CLASS_MAPPINGS = {
@@ -18,6 +19,7 @@ NODE_CLASS_MAPPINGS = {
     "TabStringMultiline": TabStringMultiline,
     "MultiSegmentPromptEditor": MultiSegmentPromptEditor,
     "OpenkitExecutionTime": OpenkitExecutionTime,
+    "OpenkitMemoryCleanup": OpenkitMemoryCleanup,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -30,6 +32,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "TabStringMultiline": "多Tab字符串",
     "MultiSegmentPromptEditor": "多段提示词可视化编辑",
     "OpenkitExecutionTime": "执行时间统计",
+    "OpenkitMemoryCleanup": "显存内存清理",
 }
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]
