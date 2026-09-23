@@ -18,6 +18,7 @@ Openkit · 执行时间统计节点
 import time
 import threading
 import inspect
+import os
 
 import execution
 import server
@@ -66,41 +67,39 @@ def _reset_peak_vram():
 # ---------------------------------------------------------------------------
 
 def _make_execute_wrapper(origin_execute):
-    """构造 execution.execute 的包装器，覆盖所有执行分支。"""
+    """构造 execution.execute 的包装器，覆盖所有执行分支。
 
-    if inspect.iscoroutinefunction(origin_execute):
-        async def openkit_execute(server_obj, dynprompt, caches, current_item,
-                                   extra_data, executed, prompt_id,
-                                   execution_list, pending_subgraph_results,
-                                   pending_async_nodes, *args, **kwargs):
-            unique_id = current_item
-            return await _execute_wrapper_core(
-                origin_execute, unique_id, server_obj, dynprompt, caches,
-                current_item, extra_data, executed, prompt_id,
-                execution_list, pending_subgraph_results,
-                pending_async_nodes, *args, **kwargs)
-        return openkit_execute
-    else:
-        def openkit_execute(server_obj, dynprompt, caches, current_item,
-                            extra_data, executed, prompt_id,
-                            execution_list, pending_subgraph_results,
-                            *args, **kwargs):
-            unique_id = current_item
-            return _execute_wrapper_core(
-                origin_execute, unique_id, server_obj, dynprompt, caches,
-                current_item, extra_data, executed, prompt_id,
-                execution_list, pending_subgraph_results,
-                None, *args, **kwargs)
-        return openkit_execute
+    仅支持 async 版本；sync 版本返回 None，调用方应跳过 patch。
+    """
+    if not inspect.iscoroutinefunction(origin_execute):
+        return None  # 信号：不支持，调用方跳过
+    async def openkit_execute(*args, **kwargs):
+        return await _execute_wrapper_core(origin_execute, *args, **kwargs)
+    return openkit_execute
 
 
-async def _execute_wrapper_core(origin_execute, unique_id, server_obj,
-                                dynprompt, caches, current_item, extra_data,
-                                executed, prompt_id, execution_list,
-                                pending_subgraph_results, pending_async_nodes,
-                                *args, **kwargs):
+async def _execute_wrapper_core(origin_execute, *args, **kwargs):
     """核心包装逻辑：入口记录开始时间，出口计算耗时并发送事件。"""
     global _run_state
+
+    # 用签名绑定提取 current_item / prompt_id / server_obj，避免硬编码位置参数
+    try:
+        sig = inspect.signature(origin_execute)
+        bound = sig.bind(*args, **kwargs)
+        bound.apply_defaults()
+        arguments = bound.arguments
+        current_item = arguments.get("current_item")
+        prompt_id = arguments.get("prompt_id")
+        server_obj = arguments.get("server_obj")
+        dynprompt = arguments.get("dynprompt")
+    except Exception:
+        arguments = {}
+        current_item = args[3] if len(args) > 3 else None
+        prompt_id = args[6] if len(args) > 6 else None
+        server_obj = args[0] if len(args) > 0 else None
+        dynprompt = args[1] if len(args) > 1 else None
+
+    unique_id = current_item
 
     # 入口：记录开始时间和VRAM（所有分支均覆盖，包括缓存命中）
     start_time = time.perf_counter()
@@ -113,26 +112,44 @@ async def _execute_wrapper_core(origin_execute, unique_id, server_obj,
     except Exception:
         class_type = '?'
 
-    # 执行原始函数
-    if inspect.iscoroutinefunction(origin_execute):
-        result = await origin_execute(
-            server_obj, dynprompt, caches, current_item, extra_data,
-            executed, prompt_id, execution_list, pending_subgraph_results,
-            pending_async_nodes, *args, **kwargs)
-    else:
-        result = origin_execute(
-            server_obj, dynprompt, caches, current_item, extra_data,
-            executed, prompt_id, execution_list, pending_subgraph_results,
-            *args, **kwargs)
-
-    # 出口：计算耗时和VRAM增量
-    elapsed_ms = int((time.perf_counter() - start_time) * 1000)
-    end_vram = _get_peak_vram()
-    vram_delta = max(0, end_vram - start_vram)
-
-    # 发送到前端（通过WebSocket）
+    # 执行原始函数：origin_execute 自身的异常必须正常透传（那是 ComfyUI 执行错误）
     try:
-        if server_obj.client_id is not None:
+        result = await origin_execute(*args, **kwargs)
+    except Exception:
+        raise
+
+    # PENDING 分支（异步节点尚未真正开始计算）：不发计时事件，发 scheduled 标记
+    is_pending = False
+    if isinstance(result, str) and result == "pending":
+        is_pending = True
+    elif isinstance(result, dict) and result.get("pending_async") is not None:
+        is_pending = True
+    elif isinstance(result, dict) and result.get("pending_subgraph") is not None:
+        is_pending = True
+
+    if is_pending:
+        try:
+            if server_obj is not None and getattr(server_obj, "client_id", None) is not None:
+                server_obj.send_sync(
+                    "openkit.exec_scheduled",
+                    {
+                        "node": unique_id,
+                        "prompt_id": prompt_id,
+                        "class_type": class_type,
+                    },
+                    server_obj.client_id,
+                )
+        except Exception:
+            pass
+        return result
+
+    # 计时统计逻辑本身包 try/except，失败时不影响结果
+    try:
+        elapsed_ms = int((time.perf_counter() - start_time) * 1000)
+        end_vram = _get_peak_vram()
+        vram_delta = max(0, end_vram - start_vram)
+
+        if server_obj is not None and getattr(server_obj, "client_id", None) is not None:
             server_obj.send_sync(
                 "openkit.exec_time",
                 {
@@ -144,6 +161,9 @@ async def _execute_wrapper_core(origin_execute, unique_id, server_obj,
                 },
                 server_obj.client_id,
             )
+        else:
+            # API 触发的运行无 client_id，不向前端推送，但记录日志
+            print(f"[Openkit] API-triggered execution (no client_id): node={unique_id} time={elapsed_ms}ms")
     except Exception:
         pass
 
@@ -181,6 +201,9 @@ def _make_send_sync_wrapper(origin_send_sync):
                             data={"execution_time": total_ms, "prompt_id": data.get("prompt_id")},
                             sid=sid,
                         )
+                    else:
+                        # API 触发的运行无 sid，不向前端推送，但记录日志
+                        print(f"[Openkit] API-triggered execution_end (no sid): prompt_id={data.get('prompt_id')} time={total_ms}ms")
                 except Exception:
                     pass
                 _run_state = None
@@ -207,6 +230,10 @@ def _apply_patches():
             _patched = True
             return True
         wrapped = _make_execute_wrapper(origin_execute)
+        if wrapped is None:
+            # sync 版本 execute：不支持 patch，跳过并告警
+            print("[Openkit] ExecutionTime: execution.execute is sync (not coroutine), skipping patch.")
+            return False
         wrapped._openkit_patched = True
         execution.execute = wrapped
 
@@ -240,8 +267,13 @@ def _poll_and_patch():
         time.sleep(0.5)
 
 
-# 启动后台patch线程
-threading.Thread(target=_poll_and_patch, daemon=True).start()
+# 启动后台patch线程（可用 OPENKIT_DISABLE_EXECTIME=1 关闭）
+if os.getenv("OPENKIT_DISABLE_EXECTIME") == "1":
+    # 跳过所有 patch 和后台线程
+    _patched = True
+    print("[Openkit] ExecutionTime disabled via OPENKIT_DISABLE_EXECTIME=1.")
+else:
+    threading.Thread(target=_poll_and_patch, daemon=True).start()
 
 
 # ---------------------------------------------------------------------------
