@@ -123,6 +123,14 @@ import { app } from "../../../scripts/app.js";
     ["格式校验未通过", "Validation failed"],
     // JSON 提取节点
     ["索引控制", "Index control"],
+    // 执行时间统计节点
+    ["Export CSV", "导出CSV"],
+    ["Execution Time", "执行时间统计"],
+    ["Node", "节点"],
+    ["Time", "耗时"],
+    ["Last", "上次"],
+    ["Diff", "差值"],
+    ["VRAM", "显存"],
   ];
 
   // 字典规范化：约定 [en, zh]；中文在前（历史手误 / 后续 addPairs 传入）自动交换为 [en, zh]
@@ -208,6 +216,11 @@ import { app } from "../../../scripts/app.js";
 
   let lang = detect();
 
+  /* ---------------- 语言切换订阅 ---------------- */
+  const langChangeListeners = [];
+  function onLangChange(cb) { langChangeListeners.push(cb); }
+  function notifyLangChange() { langChangeListeners.forEach((cb) => { try { cb(); } catch (e) {} }); }
+
   function setLang(l) {
     const next = l === "en" ? "en" : "zh";
     lang = next;
@@ -215,6 +228,7 @@ import { app } from "../../../scripts/app.js";
     try {
       window.dispatchEvent(new CustomEvent("openkit:langchange", { detail: { lang } }));
     } catch (e) { /* ignore */ }
+    notifyLangChange();
   }
 
   /* ---------------- 翻译核心 ---------------- */
@@ -299,12 +313,8 @@ import { app } from "../../../scripts/app.js";
     "TabStringMultiline": ["多Tab字符串", "Multi-Tab String"],
     "MultiSegmentPromptEditor": ["多段提示词可视化编辑", "Multi-Segment Prompt Editor"],
     "OpenkitMemoryCleanup": ["显存内存清理", "VRAM/RAM Cleanup"],
+    "OpenkitExecutionTime": ["执行时间统计", "Execution Time"],
   };
-
-  function titleFor(cls) {
-    const t = NODE_TITLES[cls];
-    return t ? (lang === "zh" ? t[0] : t[1]) : null;
-  }
 
   /** 按当前语言更新所有 Openkit 节点标题。仅当标题仍是默认名时才覆盖，
    *  用户自定义标题（双击改名）永不被覆盖。 */
@@ -338,7 +348,7 @@ import { app } from "../../../scripts/app.js";
     localizeDom,
     observeLanguage,
     NODE_TITLES,
-    titleFor,
+    onLangChange,
     applyNodeTitles,
   };
 

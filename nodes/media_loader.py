@@ -16,6 +16,8 @@ bounded by a combined-total constraint. The node exposes:
 
 import json
 
+import torch
+
 from . import media_io
 
 # No capacity caps: pictures, videos, video soundtracks and audios all have
@@ -130,21 +132,10 @@ def _trim(item):
     return num(trim.get("start")), num(trim.get("end"))
 
 
-def _validate_tab(items):
-    if not isinstance(items, list):
-        return None
-    # No capacity caps: any number of pictures/videos/audios is accepted.
-    return None
-
-
 def _validate_state(media_state):
     tabs = _parse_tabs(media_state)
     if tabs is None:
         return "Media Loader state is corrupt; clear the node and re-add media."
-    for name, items in tabs:
-        err = _validate_tab(items)
-        if err:
-            return f'Tab "{name}": {err}'
     return True
 
 
@@ -406,17 +397,37 @@ class ReferenceSplitter:
         vaud = [t for t in (bundle.get("video_audios") or []) if t is not None]
         audios = bundle.get("audios") or []
         videos = bundle.get("videos") or []
-        # Pad every stream to the declared maximum (None for the missing tail).
-        def pad(seq, n):
+        # Pad every stream to the declared maximum; missing tail entries are
+        # filled with a typed empty value matching the port's RETURN_TYPES so
+        # downstream connections never receive bare None (which would raise
+        # TypeError on the consumer).
+        def pad(seq, n, name=""):
+            if len(seq) > n:
+                print(f"[Openkit] ReferenceSplitter: {name} 数量 {len(seq)} 超过上限 {n}，已截断")
             return list(seq[:n]) + [None] * max(0, n - len(seq))
+
+        # Typed empty sentinels (mirror RETURN_TYPES below):
+        #   AUDIO port        -> silent audio dict
+        #   IMAGE (video) port -> 1-frame black clip tensor
+        empty_audio = {"waveform": torch.zeros(1, 1, 1000), "sample_rate": 32000}
+        empty_video = torch.zeros(3, 1, 64, 64, 3)
+
+        audios_out = pad(audios, self.MAX_AUDIOS, "音频")
+        videos_out = pad(videos, self.MAX_VIDEOS, "视频")
+        vaud_out = pad(vaud, self.MAX_VIDEO_AUDIOS, "视频音轨")
+        # Replace the None tail slots produced by pad() with typed empties.
+        audios_out = [empty_audio if v is None else v for v in audios_out]
+        videos_out = [empty_video if v is None else v for v in videos_out]
+        vaud_out = [empty_audio if v is None else v for v in vaud_out]
+
         return (
             groups["关键帧"],
             groups["角色"],
             groups["道具"],
             groups["场景"],
-            *pad(audios, self.MAX_AUDIOS),
-            *pad(videos, self.MAX_VIDEOS),
-            *pad(vaud, self.MAX_VIDEO_AUDIOS),
+            *audios_out,
+            *videos_out,
+            *vaud_out,
         )
 
 

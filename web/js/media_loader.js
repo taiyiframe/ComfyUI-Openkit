@@ -1800,7 +1800,11 @@ function capabilities() {
   if (!capsPromise) {
     capsPromise = api.fetchApi("/openkit_media/capabilities")
       .then((r) => r.json())
-      .catch(() => ({ video: true, av: false, ffmpeg: false }));
+      .catch((err) => {
+        console.warn("[Openkit Media] capabilities fetch failed, will retry next time:", err);
+        capsPromise = null;
+        return { video: false, av: false, ffmpeg: false };
+      });
   }
   return capsPromise;
 }
@@ -3051,8 +3055,6 @@ class MultiTabManager {
     this.resize();
     this.syncTabIndex();
   }
-
-  _txt(zh, en) { return OKT.lang === "zh" ? zh : en; }
 
   renderBody() {
     this.body.innerHTML = "";

@@ -24,6 +24,8 @@ except Exception:  # pragma: no cover
 
 from . import media_io
 
+MAX_UPLOAD_BYTES = 512 * 1024 * 1024  # 512MB
+
 SUBFOLDER = "openkit_media"
 
 IMAGE_EXT = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".tif", ".tiff"}
@@ -124,6 +126,7 @@ if PromptServer is not None and web is not None and getattr(PromptServer, "insta
         name = _unique(directory, _safe(original))
         path = os.path.join(directory, name)
         size = 0
+        oversized = False
         try:
             with open(path, "wb") as handle:
                 while True:
@@ -131,11 +134,21 @@ if PromptServer is not None and web is not None and getattr(PromptServer, "insta
                     if not chunk:
                         break
                     size += len(chunk)
+                    if size > MAX_UPLOAD_BYTES:
+                        oversized = True
+                        break
                     handle.write(chunk)
         except Exception as exc:  # noqa: BLE001
             if os.path.exists(path):
                 os.remove(path)
             return web.json_response({"error": f"write failed: {exc}"}, status=500)
+
+        if oversized:
+            if os.path.exists(path):
+                os.remove(path)
+            return web.json_response(
+                {"error": f"file exceeds 512MB limit (got {size} bytes)"}, status=413
+            )
 
         info = media_io.probe(path) if kind in ("video", "audio") else {}
         return web.json_response(
