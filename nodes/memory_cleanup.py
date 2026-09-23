@@ -5,7 +5,7 @@ Openkit · 显存/内存清理节点
 - VRAM：可选卸载全部模型、清理显存缓存（gc + soft_empty_cache + free_memory flag）
 - RAM：可选清理文件缓存、枚举进程工作集（EmptyWorkingSet）、修剪当前进程工作集
 - 全程零第三方依赖：不引入任何外部进程库，内存读数与进程枚举均用 ctypes + stdlib 实现
-- 跨平台：Windows 完整实现；Linux malloc_trim + /proc/meminfo；其他平台安全跳过
+- 跨平台：Windows 完整实现；Linux malloc_trim + /proc/meminfo；其他平台安全跳过（ctypes.wintypes 仅 Windows 可用，已条件导入）
 """
 
 import gc
@@ -19,7 +19,13 @@ from ctypes import (
     c_size_t,
     sizeof,
 )
-from ctypes import wintypes
+
+if platform.system() == "Windows":
+    from ctypes import wintypes
+else:
+    wintypes = None
+
+from ._common import AnyType, any  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # 软导入：ComfyUI 运行时模块缺失时不让整个插件 import 失败
@@ -39,35 +45,24 @@ except Exception:  # pragma: no cover - 纯防御
 CATEGORY = "Openkit/效率工具"
 
 
-class AnyType(str):
-    """用于表示任意类型的特殊类，在类型比较时总是返回相等。"""
-
-    def __eq__(self, _) -> bool:
-        return True
-
-    def __ne__(self, __value: object) -> bool:
-        return False
-
-
-any = AnyType("*")
-
-
 # ---------------------------------------------------------------------------
 # Windows 内存读取（替代原插件读取物理内存占用的做法）
 # ---------------------------------------------------------------------------
 
-class _MEMORYSTATUSEX(Structure):
-    _fields_ = [
-        ("dwLength", wintypes.DWORD),
-        ("dwMemoryLoad", wintypes.DWORD),
-        ("ullTotalPhys", c_size_t),
-        ("ullAvailPhys", c_size_t),
-        ("ullTotalPageFile", c_size_t),
-        ("ullAvailPageFile", c_size_t),
-        ("ullTotalVirtual", c_size_t),
-        ("ullAvailVirtual", c_size_t),
-        ("ullAvailExtendedVirtual", c_size_t),
-    ]
+if platform.system() == "Windows":
+
+    class _MEMORYSTATUSEX(Structure):
+        _fields_ = [
+            ("dwLength", wintypes.DWORD),
+            ("dwMemoryLoad", wintypes.DWORD),
+            ("ullTotalPhys", c_size_t),
+            ("ullAvailPhys", c_size_t),
+            ("ullTotalPageFile", c_size_t),
+            ("ullAvailPageFile", c_size_t),
+            ("ullTotalVirtual", c_size_t),
+            ("ullAvailVirtual", c_size_t),
+            ("ullAvailExtendedVirtual", c_size_t),
+        ]
 
 
 def _read_ram_usage():
