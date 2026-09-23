@@ -140,7 +140,7 @@ function buildRoot(node) {
   });
 
   root.append(top, tabbar, ta);
-  node._tsmDom = { input, tabbar, ta };
+  node._tsmDom = { top, input, tabbar, ta };
   return root;
 }
 
@@ -213,8 +213,9 @@ app.registerExtension({
         serialize: false,
       });
       // 兼容 ComfyUI-Prompt-Assistant：把当前活动文本框暴露为 inputEl，
-      // 并使用其白名单名称 "text"，使提示词小助手绿色按钮可挂载到本节点
-      domWidget.inputEl = ta;
+      // 并使用其白名单名称 "text"，使提示词小助手绿色按钮可挂载到本节点。
+      // ta 是 buildRoot() 的局部变量，这里必须从 node._tsmDom 取（裸写 ta 会 ReferenceError 并中止工作流加载）。
+      domWidget.inputEl = this._tsmDom.ta;
       domWidget.name = "text";
       domWidget.computeLayoutSize = () => {
         const nw = Math.max(380, this.size?.[0] || 380);

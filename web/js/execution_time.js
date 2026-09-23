@@ -25,27 +25,36 @@ const I18N_MAP = {
   zh: {
     "分": "分", "秒": "秒",
     "Node ID": "节点ID", "Title": "标题", "Time": "耗时", "Last": "上次",
-    "Diff": "差异", "ΔVRAM": "增量显存", "Max": "最大", "Total": "总计",
+    "Diff": "差异", "VRAM": "显存", "Max": "最大", "Total": "总计",
     "Export CSV": "导出CSV",
+    "History": "历史记录", "Latest run": "最新运行", "Clear history": "清除历史",
+    "No history yet": "暂无历史记录",
+    "Clear this workflow's execution history?": "清除本工作流的全部执行历史记录？",
   },
   en: {
     "分": "m", "秒": "s",
     "Node ID": "Node ID", "Title": "Title", "Time": "Time", "Last": "Last",
-    "Diff": "Diff", "ΔVRAM": "ΔVRAM", "Max": "Max", "Total": "Total",
+    "Diff": "Diff", "VRAM": "VRAM", "Max": "Max", "Total": "Total",
     "Export CSV": "Export CSV",
+    "History": "History", "Latest run": "Latest run", "Clear history": "Clear history",
+    "No history yet": "No history yet",
+    "Clear this workflow's execution history?": "Clear this workflow's execution history?",
   },
 };
 function t(s) {
-  if (OKT && typeof OKT.t === "function") {
-    try { return OKT.t(s); } catch (e) { /* ignore */ }
-  }
+  // 本模块词条以本地 I18N_MAP 为第一优先（含"分/秒"等单位，必须随语言切换），
+  // 未收录的再回退 OKT.tr 全局字典。
   let lang = (OKT && OKT.lang) || "zh";
   try {
     const saved = localStorage.getItem("openkit_lang");
     if (saved) lang = saved;
   } catch (e) { /* ignore */ }
   const map = I18N_MAP[lang] || I18N_MAP.zh;
-  return map[s] !== undefined ? map[s] : s;
+  if (map[s] !== undefined) return map[s];
+  if (OKT && typeof OKT.tr === "function") {
+    try { return OKT.tr(s); } catch (e) { /* ignore */ }
+  }
+  return s;
 }
 
 /* ---------------- 工具函数 ---------------- */
@@ -80,6 +89,226 @@ let lastRafAt = 0;
 let currentPromptId = null; // 最近一次运行的 prompt_id（来自后端 exec_time detail）
 const RAF_INTERVAL = 100; // ~10fps 刷新画布
 
+/* ---------------- 历史持久化（按工作流结构 hash 隔离，LRU 淘汰） ----------------
+ * localStorage["openkit_et_history_v1"] 结构：
+ *   { "wf_<hash>": { workflow_name, runs: [
+ *       { prompt_id, timestamp, total_ms, nodes:[{node,class_type,execution_time,vram_used}] } ] } }
+ * - 每个工作流保留最近 MAX_RUNS_PER_WF 次；全局最多 MAX_WORKFLOWS 个工作流，超出按最近运行时间 LRU 淘汰
+ * - hash 只覆盖节点(id,type)与连接拓扑，排除 pos/size/widgets_values，
+ *   拖动节点、改 seed、改提示词不会让历史失效
+ * - viewRun：用户在"历史记录"下拉中查看的某次运行（null = 显示当前实时数据）
+ */
+const HIST_KEY = "openkit_et_history_v1";
+const MAX_RUNS_PER_WF = 10;
+const MAX_WORKFLOWS = 50;
+let viewRun = null; // { run, prev } 或 null
+
+function fnvHash(str) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return ("0000000" + (h >>> 0).toString(16)).slice(-8);
+}
+
+function workflowHash() {
+  try {
+    const nodes = (app.graph?._nodes || []).map((n) => [n.id, n.type]);
+    const links = [];
+    const ls = app.graph?.links;
+    const pushLink = (l) => {
+      if (!l) return;
+      links.push([l.origin_id, l.origin_slot, l.target_id, l.target_slot]);
+    };
+    if (Array.isArray(ls)) ls.forEach(pushLink);
+    else if (ls) Object.keys(ls).forEach((k) => pushLink(ls[k]));
+    links.sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+    return fnvHash(JSON.stringify({ n: nodes, l: links }));
+  } catch (e) {
+    return null;
+  }
+}
+
+function readHistory() {
+  try { return JSON.parse(localStorage.getItem(HIST_KEY)) || {}; }
+  catch (e) { return {}; }
+}
+
+function _lastTs(slot) {
+  const r = slot?.runs;
+  return (r && r.length) ? r[r.length - 1].timestamp : 0;
+}
+
+function writeHistory(h) {
+  const doWrite = (obj) => { localStorage.setItem(HIST_KEY, JSON.stringify(obj)); };
+  try {
+    doWrite(h);
+    return true;
+  } catch (e) {
+    // 配额溢出：只保留最近 25 个工作流后重试一次，仍失败则放弃（不影响主功能）
+    try {
+      const keys = Object.keys(h).sort((a, b) => _lastTs(h[b]) - _lastTs(h[a]));
+      keys.slice(25).forEach((k) => delete h[k]);
+      doWrite(h);
+      return true;
+    } catch (e2) {
+      console.warn("[Openkit ET] history persist failed:", e2);
+      return false;
+    }
+  }
+}
+
+function recordRun(payload) {
+  const hash = workflowHash();
+  if (!hash) return;
+  const h = readHistory();
+  const key = "wf_" + hash;
+  const wfName = app.graph?._workflow?.name || null;
+  const slot = h[key] || { workflow_name: wfName, runs: [] };
+  if (wfName) slot.workflow_name = wfName;
+  slot.runs.push(payload);
+  if (slot.runs.length > MAX_RUNS_PER_WF) slot.runs = slot.runs.slice(-MAX_RUNS_PER_WF);
+  h[key] = slot;
+  const keys = Object.keys(h);
+  if (keys.length > MAX_WORKFLOWS) {
+    keys.sort((a, b) => _lastTs(h[b]) - _lastTs(h[a]));
+    keys.slice(MAX_WORKFLOWS).forEach((k) => delete h[k]);
+  }
+  writeHistory(h);
+}
+
+function getRuns() {
+  const hash = workflowHash();
+  if (!hash) return [];
+  return readHistory()["wf_" + hash]?.runs || [];
+}
+
+function clearRuns() {
+  const hash = workflowHash();
+  if (!hash) return;
+  const h = readHistory();
+  delete h["wf_" + hash];
+  writeHistory(h);
+}
+
+// 把某次运行回灌为节点 badge（灰色，标记 restored，区别于当前运行的亮黄）
+function applyRunToBadges(run) {
+  if (!app.graph) return;
+  app.graph._nodes.forEach((n) => {
+    delete n._ok_et_time;
+    delete n._ok_et_vram;
+    delete n._ok_et_ram;
+    delete n._ok_et_restored;
+  });
+  if (!run) { app.graph.setDirtyCanvas(true, false); return; }
+  (run.nodes || []).forEach((item) => {
+    const n = app.graph.getNodeById(item.node);
+    if (n && (!item.class_type || !n.type || item.class_type === n.type)) {
+      n._ok_et_time = item.execution_time;
+      n._ok_et_vram = item.vram_used;
+      n._ok_et_ram = item.ram_used || 0;
+      n._ok_et_restored = true;
+    }
+  });
+  app.graph.setDirtyCanvas(true, false);
+}
+
+// 刷新后用最近一次运行填充表格数据（runningData 本是易失内存态）
+function hydrateRunningFromRun(run) {
+  if (!run) {
+    runningData = { nodes: [], total: null };
+  } else {
+    runningData = {
+      nodes: (run.nodes || []).map((n) => ({ ...n })),
+      total: run.total_ms,
+      restored: true,
+    };
+  }
+  lastRunData = null;
+}
+
+function pad2(n) { return String(n).padStart(2, "0"); }
+function fmtRunLabel(r) {
+  const d = new Date(r.timestamp);
+  return `${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ` +
+    `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())} · ${fmtTotal(r.total_ms)}`;
+}
+
+// 历史下拉选项：第 1 项"最新运行"，其后按时间倒序编号
+function historyOptions() {
+  const opts = [t("Latest run")];
+  getRuns().slice().reverse().forEach((r, i) => opts.push(`${i + 1}. ${fmtRunLabel(r)}`));
+  return opts;
+}
+
+// 用户从下拉选择某项
+function selectHistory(label) {
+  const desc = getRuns().slice().reverse(); // 最新在前
+  if (!label || label === t("Latest run")) {
+    viewRun = null;
+    const latest = desc[0] || null;
+    applyRunToBadges(latest);
+    if (latest) hydrateRunningFromRun(latest);
+    refreshTable();
+    return;
+  }
+  const m = /^(\d+)\./.exec(label);
+  if (!m) return;
+  const idx = parseInt(m[1], 10) - 1;
+  const run = desc[idx];
+  if (!run) return;
+  // 正序中该条的前一条作为 diff 对比基准
+  const ascIdx = desc.length - 1 - idx;
+  const all = getRuns();
+  const prev = ascIdx > 0 ? all[ascIdx - 1] : null;
+  viewRun = { run, prev };
+  applyRunToBadges(run);
+  refreshTable();
+}
+
+// 同步所有执行时间统计节点上的历史下拉
+function syncHistoryWidgets(selectedLabel) {
+  if (!app.graph) return;
+  app.graph._nodes.forEach((node) => {
+    if (node.comfyClass !== "OpenkitExecutionTime" || !node.widgets) return;
+    const w = node.widgets.find((x) => x.name === "History");
+    if (!w) return;
+    if (w.options) w.options.values = historyOptions;
+    if (selectedLabel !== undefined) w.value = selectedLabel;
+  });
+}
+
+// 加载/切换工作流后恢复最近一次运行（badge + 表格 + 下拉）
+function restoreAfterLoad() {
+  let runs = getRuns();
+  // 一次性迁移旧版单条记录 openkit_et_last_run：归属到当前工作流
+  if (!runs.length) {
+    try {
+      const legacy = localStorage.getItem("openkit_et_last_run");
+      if (legacy) {
+        const old = JSON.parse(legacy);
+        if (old && Array.isArray(old.nodes)) {
+          recordRun({
+            prompt_id: old.prompt_id || null,
+            timestamp: old.timestamp || Date.now(),
+            total_ms: old.total_ms,
+            nodes: old.nodes,
+          });
+          runs = getRuns();
+        }
+        localStorage.removeItem("openkit_et_last_run");
+      }
+    } catch (e) { /* ignore */ }
+  }
+  const latest = runs.length ? runs[runs.length - 1] : null;
+  viewRun = null;
+  hydrateRunningFromRun(latest);
+  applyRunToBadges(latest);
+  refreshTable();
+  syncHistoryWidgets(t("Latest run"));
+}
+
 function startRaf() {
   stopRaf();
   const tick = (now) => {
@@ -105,12 +334,55 @@ function stopRaf() {
 
 let timerEl = null;
 let timerTextEl = null; // 独立 span 装时间文本，避免 textContent 清除最小化按钮
+let metricEl = null;     // 第二行：RAM / VRAM 实时占用
 let minBtn = null;
+let timerAborted = false; // run interrupted/errored: keep red timer
+let metricsTimerId = null; // 轮询 /system_stats 的 interval
 const TIMER_POS_KEY = "openkit_et_timer_pos";
 const TIMER_MIN_KEY = "openkit_et_timer_minimized";
 
 function isTimerMinimized() {
   return !!timerEl && timerEl.classList.contains("ok-et-minimized");
+}
+
+function fmtGB(bytes) {
+  if (!bytes || bytes <= 0) return "0G";
+  return (bytes / 1073741824).toFixed(1) + "G";
+}
+
+// 最新一次轮询到的全局内存/显存占用（供运行中节点 badge 实时显示）
+let curMem = { ramUsed: 0, vramUsed: 0 };
+
+// 拉取 /system_stats 并更新第二行指标
+async function pollSystemStats() {
+  try {
+    const r = await fetch("/system_stats");
+    if (!r.ok) return;
+    const s = await r.json();
+    const st = s.system || {};
+    const dev = (s.devices && s.devices[0]) || {};
+    const ramUsed = st.ram_total - st.ram_free;
+    const vramUsed = dev.vram_total - dev.vram_free;
+    curMem = { ramUsed, vramUsed };
+    if (!metricEl) return;
+    metricEl.innerHTML =
+      '<span style="color:#82c8e0">内存 ' + fmtGB(ramUsed) + '/' + fmtGB(st.ram_total) + '</span>' +
+      '<span style="margin:0 6px;color:#555">·</span>' +
+      '<span style="color:#a0d88a">显存 ' + fmtGB(vramUsed) + '/' + fmtGB(dev.vram_total) + '</span>';
+  } catch (e) { /* ignore */ }
+}
+
+function startMetricsPoll() {
+  stopMetricsPoll();
+  pollSystemStats();
+  metricsTimerId = setInterval(pollSystemStats, 1000);
+}
+
+function stopMetricsPoll() {
+  if (metricsTimerId !== null) {
+    clearInterval(metricsTimerId);
+    metricsTimerId = null;
+  }
 }
 
 // 应用/恢复最小化样式
@@ -119,10 +391,14 @@ function applyMinimize(minimized) {
   if (minimized) {
     timerEl.style.padding = "4px 8px";
     timerEl.style.fontSize = "12px";
+    timerEl.style.flexDirection = "row";
+    if (metricEl) metricEl.style.display = "none";
     timerTextEl.textContent = "●";
   } else {
-    timerEl.style.padding = "5px 18px";
+    timerEl.style.padding = "6px 14px 5px";
     timerEl.style.fontSize = "15px";
+    timerEl.style.flexDirection = "column";
+    if (metricEl) metricEl.style.display = "";
     if (execStartTs !== null) timerTextEl.textContent = fmtTotal(performance.now() - execStartTs);
     else if (runningData.total !== null) timerTextEl.textContent = fmtTotal(runningData.total);
     else timerTextEl.textContent = fmtTotal(0);
@@ -154,25 +430,35 @@ function ensureTimer() {
     transform: saved ? "none" : "translateX(-50%)",
     zIndex: "9999",
     background: "rgba(0,0,0,0.78)",
-    color: "#f0f050",
-    padding: "5px 18px",
-    borderRadius: "14px",
+    color: "#f0e68c",
+    padding: "6px 14px 5px",
+    borderRadius: "12px",
     fontFamily: '"Cascadia Code","Fira Code","Consolas",monospace',
     fontSize: "15px",
     fontWeight: "600",
     letterSpacing: "0.5px",
     cursor: "grab",
     userSelect: "none",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    lineHeight: "1.3",
     boxShadow: "0 2px 8px rgba(0,0,0,0.35)",
   });
 
   // 时间文本用独立 span；最小化按钮放在其外，避免 textContent 清除子元素
   timerTextEl = document.createElement("span");
   timerTextEl.textContent = fmtTotal(0);
+  // 第二行：RAM / VRAM 实时指标
+  metricEl = document.createElement("span");
+  Object.assign(metricEl.style, {
+    fontSize: "10px", fontWeight: "500", letterSpacing: "0.3px",
+    marginTop: "1px", opacity: "0.85",
+  });
   minBtn = document.createElement("span");
   minBtn.textContent = "−";
   Object.assign(minBtn.style, {
-    marginLeft: "10px", cursor: "pointer", fontSize: "12px",
+    marginLeft: "8px", cursor: "pointer", fontSize: "12px",
     opacity: "0.7", display: "inline-block", width: "14px", textAlign: "center",
   });
   minBtn.onclick = (e) => {
@@ -184,8 +470,13 @@ function ensureTimer() {
   // 阻止按钮上的 mousedown 触发计时器拖动
   minBtn.addEventListener("mousedown", (e) => e.stopPropagation());
   minBtn.addEventListener("touchstart", (e) => e.stopPropagation(), { passive: false });
-  timerEl.appendChild(timerTextEl);
-  timerEl.appendChild(minBtn);
+  // 第一行：时间 + 最小化按钮
+  const row1 = document.createElement("span");
+  Object.assign(row1.style, { display: "flex", alignItems: "center" });
+  row1.appendChild(timerTextEl);
+  row1.appendChild(minBtn);
+  timerEl.appendChild(row1);
+  timerEl.appendChild(metricEl);
 
   // 读取上次最小化状态
   try {
@@ -231,13 +522,17 @@ function ensureTimer() {
   window.addEventListener("touchend", onUp);
 
   document.body.appendChild(timerEl);
+  // 空闲时也显示一次当前资源占用（不等下次运行）
+  pollSystemStats();
 }
 
 function showTimer() {
   ensureTimer();
   execStartTs = performance.now();
-  timerEl.style.color = "#f0f050";
+  timerAborted = false;
+  timerEl.style.color = "#f0e68c";
   if (!isTimerMinimized()) timerTextEl.textContent = fmtTotal(0);
+  startMetricsPoll();
 }
 
 function updateTimer() {
@@ -249,9 +544,12 @@ function updateTimer() {
 function freezeTimer() {
   if (execStartTs !== null && timerEl) {
     if (!isTimerMinimized()) timerTextEl.textContent = fmtTotal(performance.now() - execStartTs);
-    timerEl.style.color = "#aaaaaa";
+    timerEl.style.color = timerAborted ? "#f07070" : "#aaaaaa";
   }
   execStartTs = null;
+  stopMetricsPoll();
+  // 冻结后再拉一次最终占用，作为收尾显示
+  pollSystemStats();
 }
 
 /* ---------------- Badge 绘制 ---------------- */
@@ -270,33 +568,39 @@ function drawBadge(node, orig, restArgs) {
     let text = "";
     let isRestored = node._ok_et_restored === true;
     if (node._ok_et_time !== undefined) {
-      text = fmtTime(node._ok_et_time) + "  ΔVRAM " + fmtBytes(node._ok_et_vram, 1);
+      text = fmtTime(node._ok_et_time)
+        + " 显存 " + fmtBytes(node._ok_et_vram, 1)
+        + " 内存 " + fmtBytes(node._ok_et_ram, 1);
     } else if (node._ok_et_running !== undefined) {
-      text = fmtTime(performance.now() - node._ok_et_running) + " …";
+      text = fmtTime(performance.now() - node._ok_et_running)
+        + " 显存 " + fmtBytes(curMem.vramUsed, 1)
+        + " 内存 " + fmtBytes(curMem.ramUsed, 1);
     }
     if (!text) return r;
 
     ctx.save();
     ctx.font = "11px sans-serif";
     const tw = ctx.measureText(text).width;
-    const padX = 6;
-    const badgeY = -TITLE_H - 18;
-    const badgeColor = isRestored ? "#8a93a3" : "#f0f050";
+    const padX = 7;
+    const badgeY = -TITLE_H - 19;
+    const bh = 17;
+    const badgeColor = isRestored ? "#8a93a3" : "#f0e68c";
 
-    ctx.fillStyle = "rgba(15,31,15,0.92)";
+    // 无描边胶囊：柔和深色底 + 精致圆角，文字带轻微阴影
+    ctx.fillStyle = isRestored ? "rgba(40,42,48,0.72)" : "rgba(28,30,38,0.78)";
     ctx.beginPath();
     if (typeof ctx.roundRect === "function") {
-      ctx.roundRect(0, badgeY, tw + padX * 2, 18, 4);
+      ctx.roundRect(0, badgeY, tw + padX * 2, bh, 8);
     } else {
-      ctx.rect(0, badgeY, tw + padX * 2, 18);
+      ctx.rect(0, badgeY, tw + padX * 2, bh);
     }
     ctx.fill();
-    ctx.strokeStyle = badgeColor;
-    ctx.lineWidth = 0.5;
-    ctx.stroke();
 
+    ctx.shadowColor = "rgba(0,0,0,0.45)";
+    ctx.shadowBlur = 2;
+    ctx.shadowOffsetY = 1;
     ctx.fillStyle = badgeColor;
-    ctx.fillText(text, padX, badgeY + 13);
+    ctx.fillText(text, padX, badgeY + 12);
     ctx.restore();
   } catch (e) {
     console.warn("[Openkit ET] badge error:", e);
@@ -320,7 +624,7 @@ function buildTable() {
   const thead = document.createElement("thead");
   thead.style.background = "var(--comfy-input-bg)";
   const trh = document.createElement("tr");
-  ["Node ID", "Title", "Time", "Last", "Diff", "ΔVRAM"].forEach((hdr) => {
+  ["Node ID", "Title", "Time", "Last", "Diff", "VRAM"].forEach((hdr) => {
     const th = document.createElement("th");
     th.textContent = t(hdr);
     Object.assign(th.style, thStyle);
@@ -331,14 +635,21 @@ function buildTable() {
   table.appendChild(tbody);
   table.appendChild(tfoot);
 
-  if (!runningData.nodes.length) return table;
+  // 数据源：查看历史时用 viewRun，否则用当前（或刷新后恢复的）runningData
+  const source = viewRun
+    ? { nodes: viewRun.run.nodes || [], total: viewRun.run.total_ms }
+    : runningData;
+  const prevPool = viewRun ? (viewRun.prev?.nodes || []) : (lastRunData?.nodes || []);
+  const prevTotal = viewRun ? viewRun.prev?.total_ms : lastRunData?.total;
+
+  if (!source.nodes.length) return table;
 
   let maxTime = 0, maxVram = 0;
 
-  runningData.nodes.forEach((item) => {
+  source.nodes.forEach((item) => {
     const node = app.graph.getNodeById(item.node);
     const title = node?.title ?? item.class_type ?? item.node;
-    const prev = lastRunData?.nodes?.find((x) => x.node === item.node)?.execution_time;
+    const prev = prevPool.find((x) => x.node === item.node)?.execution_time;
 
     let diffText = "", diffColor = "white";
     if (prev !== undefined) {
@@ -369,11 +680,10 @@ function buildTable() {
     tbody.appendChild(tr);
   });
 
-  if (runningData.total !== null) {
-    const prevTotal = lastRunData?.total;
+  if (source.total !== null && source.total !== undefined) {
     let diffText = "", diffColor = "white";
     if (prevTotal !== undefined && prevTotal !== null) {
-      const d = runningData.total - prevTotal;
+      const d = source.total - prevTotal;
       const pct = prevTotal > 0 ? ((d * 100) / prevTotal).toFixed(1) + "%" : "—";
       if (d > 0) { diffColor = "#ff6b6b"; diffText = "+" + fmtTime(d) + " / +" + pct; }
       else if (d === 0) { diffText = fmtTime(d); }
@@ -390,7 +700,7 @@ function buildTable() {
     tfoot.appendChild(trMax);
 
     const trTotal = document.createElement("tr");
-    [t("Total"), "", fmtTime(runningData.total),
+    [t("Total"), "", fmtTime(source.total),
      prevTotal != null ? fmtTime(prevTotal) : "", diffText, ""].forEach((cell, i) => {
       const td = document.createElement("td");
       td.style.textAlign = "right";
@@ -461,6 +771,21 @@ app.registerExtension({
   async setup() {
     ensureTimer();
 
+    // 工作流加载 / 切换工作流 tab 后恢复历史 badge 与表格
+    // （graph.configure 会重建节点对象，易失的 _ok_et_* 属性全部丢失）
+    try {
+      const origLoad = app.loadGraphData;
+      if (typeof origLoad === "function") {
+        app.loadGraphData = async function (...args) {
+          const r = await origLoad.apply(this, args);
+          // 两次恢复（100ms / 500ms），兼容节点异步重建；操作幂等
+          setTimeout(() => { try { restoreAfterLoad(); } catch (e) { /* ignore */ } }, 100);
+          setTimeout(() => { try { restoreAfterLoad(); } catch (e) { /* ignore */ } }, 500);
+          return r;
+        };
+      }
+    } catch (e) { /* ignore */ }
+
     // 运行开始：重置数据
     api.addEventListener("execution_start", () => {
       startRaf();
@@ -469,10 +794,13 @@ app.registerExtension({
       app.graph._nodes.forEach((n) => {
         delete n._ok_et_time;
         delete n._ok_et_vram;
+        delete n._ok_et_ram;
         delete n._ok_et_running;
         delete n._ok_et_restored;
       });
       runningData = { nodes: [], total: null, aborted: false };
+      viewRun = null;
+      syncHistoryWidgets(t("Latest run"));
     });
 
     // 节点开始执行：实时计时
@@ -496,6 +824,7 @@ app.registerExtension({
       if (node) {
         node._ok_et_time = detail.execution_time;
         node._ok_et_vram = detail.vram_used;
+        node._ok_et_ram = detail.ram_used || 0;
         delete node._ok_et_running;
       }
       const idx = runningData.nodes.findIndex((x) => x.node === detail.node);
@@ -503,6 +832,7 @@ app.registerExtension({
         node: detail.node,
         execution_time: detail.execution_time,
         vram_used: detail.vram_used,
+        ram_used: detail.ram_used || 0,
         class_type: detail.class_type,
       };
       if (idx >= 0) runningData.nodes[idx] = data;
@@ -517,7 +847,7 @@ app.registerExtension({
       runningData.total = detail.execution_time;
       // 清除残留的运行中标记（pending/缓存节点可能未收到 exec_time）
       app.graph._nodes.forEach((n) => { delete n._ok_et_running; });
-      // 持久化最近一次运行（中断的不持久化）
+      // 持久化到按工作流隔离的历史（中断的不持久化）
       if (!runningData.aborted) {
         try {
           const payload = {
@@ -529,24 +859,29 @@ app.registerExtension({
               class_type: n.class_type,
               execution_time: n.execution_time,
               vram_used: n.vram_used,
+              ram_used: n.ram_used || 0,
             })),
           };
-          localStorage.setItem("openkit_et_last_run", JSON.stringify(payload));
+          recordRun(payload);
         } catch (e) { /* ignore */ }
       }
       currentPromptId = null;
+      viewRun = null;
       refreshTable();
+      syncHistoryWidgets(t("Latest run"));
     });
 
     // 中断：立即停止计时器，红色冻结，清运行中状态
     // 注意：ComfyUI 前端事件名是 execution_interrupted，不是 interrupt（interrupt 不存在）
     api.addEventListener("execution_interrupted", () => {
       stopRaf();
+      stopMetricsPoll();
       if (timerEl && execStartTs !== null) {
         if (!isTimerMinimized()) timerTextEl.textContent = fmtTotal(performance.now() - execStartTs);
         timerEl.style.color = "#f07070";
       }
       execStartTs = null;
+      timerAborted = true;
       // 清所有节点的运行中标记
       if (app?.graph) {
         app.graph._nodes.forEach((n) => { delete n._ok_et_running; });
@@ -559,14 +894,18 @@ app.registerExtension({
     // 执行错误：同上处理
     api.addEventListener("execution_error", () => {
       stopRaf();
+      stopMetricsPoll();
       if (timerEl && execStartTs !== null) {
         if (!isTimerMinimized()) timerTextEl.textContent = fmtTotal(performance.now() - execStartTs);
         timerEl.style.color = "#f07070";
       }
       execStartTs = null;
+      timerAborted = true;
       if (app?.graph) {
         app.graph._nodes.forEach((n) => { delete n._ok_et_running; });
         app.graph.setDirtyCanvas(true, false);
+      // errored runs are not persisted
+      runningData.aborted = true;
       }
     });
 
@@ -580,7 +919,11 @@ app.registerExtension({
 
     // 语言切换：刷新表格与画布 badge
     if (OKT && typeof OKT.onLangChange === "function") {
-      OKT.onLangChange(() => { refreshTable(); app.graph?.setDirtyCanvas(true, false); });
+      OKT.onLangChange(() => {
+        refreshTable();
+        syncHistoryWidgets(viewRun ? undefined : t("Latest run"));
+        app.graph?.setDirtyCanvas(true, false);
+      });
     } else {
       // 无 OKT 回调时，轮询检测 localStorage 语言变化
       let _lastLang = (OKT && OKT.lang) || null;
@@ -590,6 +933,7 @@ app.registerExtension({
         if (_lastLang !== null && lang !== _lastLang) {
           _lastLang = lang;
           refreshTable();
+          syncHistoryWidgets(viewRun ? undefined : t("Latest run"));
           app.graph?.setDirtyCanvas(true, false);
         } else {
           _lastLang = lang;
@@ -642,6 +986,24 @@ app.registerExtension({
         tableWidget.inputEl = document.createElement("div");
         document.body.appendChild(tableWidget.inputEl);
 
+        // 历史记录下拉：查看本工作流最近 10 次运行（刷新 / 切换 tab 后仍在）
+        const historyWidget = this.addWidget(
+          "combo", t("History"), t("Latest run"),
+          (value) => { try { selectHistory(value); } catch (e) { /* ignore */ } },
+          { values: historyOptions }
+        );
+        historyWidget.serialize = false;
+
+        // 清除本工作流历史
+        this.addWidget("button", t("Clear history"), null, () => {
+          clearRuns();
+          viewRun = null;
+          hydrateRunningFromRun(null);
+          applyRunToBadges(null);
+          refreshTable();
+          syncHistoryWidgets(t("Latest run"));
+        });
+
         this.addWidget("button", t("Export CSV"), null, () => {
           exportCSV(tableWidget.inputEl.firstChild);
         });
@@ -664,19 +1026,7 @@ app.registerExtension({
 
   async loadedGraphNode(node) {
     wrapNodeBadge(node);
-    // 回灌持久化的执行时间（仅加载已保存图时）
-    try {
-      const raw = localStorage.getItem("openkit_et_last_run");
-      if (raw) {
-        const data = JSON.parse(raw);
-        const found = data.nodes?.find((n) => String(n.node) === String(node.id));
-        // 校验 class_type 一致，防止跨工作流 node_id 碰撞张冠李戴
-        if (found && (!found.class_type || !node.type || found.class_type === node.type)) {
-          node._ok_et_time = found.execution_time;
-          node._ok_et_vram = found.vram_used;
-          node._ok_et_restored = true;
-        }
-      }
-    } catch (e) { /* ignore */ }
+    // 历史 badge 回灌统一在 app.loadGraphData 后的 restoreAfterLoad() 中
+    // 按 workflow_hash + node_id + class_type 双键匹配完成，此处不再逐节点处理。
   },
 });
