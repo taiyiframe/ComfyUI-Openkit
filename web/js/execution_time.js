@@ -25,13 +25,13 @@ const I18N_MAP = {
   zh: {
     "分": "分", "秒": "秒",
     "Node ID": "节点ID", "Title": "标题", "Time": "耗时", "Last": "上次",
-    "Diff": "差异", "VRAM": "显存", "Max": "最大", "Total": "总计",
+    "Diff": "差异", "ΔVRAM": "增量显存", "Max": "最大", "Total": "总计",
     "Export CSV": "导出CSV",
   },
   en: {
     "分": "m", "秒": "s",
     "Node ID": "Node ID", "Title": "Title", "Time": "Time", "Last": "Last",
-    "Diff": "Diff", "VRAM": "VRAM", "Max": "Max", "Total": "Total",
+    "Diff": "Diff", "ΔVRAM": "ΔVRAM", "Max": "Max", "Total": "Total",
     "Export CSV": "Export CSV",
   },
 };
@@ -131,6 +131,13 @@ function applyMinimize(minimized) {
 
 function ensureTimer() {
   if (timerEl) return;
+  // 双计时器防护：若 Dev-Utils-fix 计时器已存在则跳过（功能完全重叠）
+  try {
+    if (document.getElementById("ty-et-total-timer")) {
+      console.info("[Openkit ET] Dev-Utils-fix timer detected, skipping Openkit timer creation.");
+      return;
+    }
+  } catch (e) { /* ignore */ }
   timerEl = document.createElement("div");
   timerEl.id = "openkit-et-timer";
 
@@ -263,7 +270,7 @@ function drawBadge(node, orig, restArgs) {
     let text = "";
     let isRestored = node._ok_et_restored === true;
     if (node._ok_et_time !== undefined) {
-      text = fmtTime(node._ok_et_time) + "  VRAM " + fmtBytes(node._ok_et_vram, 1);
+      text = fmtTime(node._ok_et_time) + "  ΔVRAM " + fmtBytes(node._ok_et_vram, 1);
     } else if (node._ok_et_running !== undefined) {
       text = fmtTime(performance.now() - node._ok_et_running) + " …";
     }
@@ -313,7 +320,7 @@ function buildTable() {
   const thead = document.createElement("thead");
   thead.style.background = "var(--comfy-input-bg)";
   const trh = document.createElement("tr");
-  ["Node ID", "Title", "Time", "Last", "Diff", "VRAM"].forEach((hdr) => {
+  ["Node ID", "Title", "Time", "Last", "Diff", "ΔVRAM"].forEach((hdr) => {
     const th = document.createElement("th");
     th.textContent = t(hdr);
     Object.assign(th.style, thStyle);
@@ -508,6 +515,8 @@ app.registerExtension({
       stopRaf();
       freezeTimer();
       runningData.total = detail.execution_time;
+      // 清除残留的运行中标记（pending/缓存节点可能未收到 exec_time）
+      app.graph._nodes.forEach((n) => { delete n._ok_et_running; });
       // 持久化最近一次运行（中断的不持久化）
       if (!runningData.aborted) {
         try {
@@ -530,7 +539,8 @@ app.registerExtension({
     });
 
     // 中断：立即停止计时器，红色冻结，清运行中状态
-    api.addEventListener("interrupt", () => {
+    // 注意：ComfyUI 前端事件名是 execution_interrupted，不是 interrupt（interrupt 不存在）
+    api.addEventListener("execution_interrupted", () => {
       stopRaf();
       if (timerEl && execStartTs !== null) {
         if (!isTimerMinimized()) timerTextEl.textContent = fmtTotal(performance.now() - execStartTs);
@@ -557,6 +567,14 @@ app.registerExtension({
       if (app?.graph) {
         app.graph._nodes.forEach((n) => { delete n._ok_et_running; });
         app.graph.setDirtyCanvas(true, false);
+      }
+    });
+
+    // 后端上报单节点中断/异常：清除该节点运行中 badge
+    api.addEventListener("openkit.exec_aborted", ({ detail }) => {
+      if (detail?.node !== undefined) {
+        const node = app.graph.getNodeById(detail.node);
+        if (node) { delete node._ok_et_running; app.graph.setDirtyCanvas(true, false); }
       }
     });
 
@@ -652,7 +670,8 @@ app.registerExtension({
       if (raw) {
         const data = JSON.parse(raw);
         const found = data.nodes?.find((n) => String(n.node) === String(node.id));
-        if (found) {
+        // 校验 class_type 一致，防止跨工作流 node_id 碰撞张冠李戴
+        if (found && (!found.class_type || !node.type || found.class_type === node.type)) {
           node._ok_et_time = found.execution_time;
           node._ok_et_vram = found.vram_used;
           node._ok_et_restored = true;

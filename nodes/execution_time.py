@@ -116,6 +116,18 @@ async def _execute_wrapper_core(origin_execute, *args, **kwargs):
     try:
         result = await origin_execute(*args, **kwargs)
     except Exception:
+        # 中断/异常：清理该节点已执行标记，通知前端 badge 复位
+        if _run_state is not None and unique_id is not None:
+            _run_state.get("executed_nodes", set()).discard(str(unique_id))
+        try:
+            if server_obj is not None and getattr(server_obj, "client_id", None) is not None:
+                server_obj.send_sync(
+                    "openkit.exec_aborted",
+                    {"node": unique_id, "prompt_id": prompt_id},
+                    server_obj.client_id,
+                )
+        except Exception:
+            pass
         raise
 
     # PENDING 分支（异步节点尚未真正开始计算）：不发计时事件，发 scheduled 标记
@@ -142,6 +154,12 @@ async def _execute_wrapper_core(origin_execute, *args, **kwargs):
         except Exception:
             pass
         return result
+
+    # 缓存命中节点（未触发 executing 事件）不发送假 ~0ms 计时
+    if _run_state is not None and unique_id is not None:
+        executed = _run_state.get("executed_nodes", set())
+        if str(unique_id) not in executed:
+            return result
 
     # 计时统计逻辑本身包 try/except，失败时不影响结果
     try:
@@ -185,6 +203,12 @@ def _make_send_sync_wrapper(origin_send_sync):
                 "start_time": time.perf_counter(),
                 "nodes": {},
             }
+
+        # 节点开始执行（仅真执行触发，缓存命中不触发此事件）：记录到已执行集合
+        if event == "executing" and data is not None and _run_state is not None:
+            node_val = data.get("node") if isinstance(data, dict) else data
+            if node_val is not None:
+                _run_state.setdefault("executed_nodes", set()).add(str(node_val))
 
         # 先调用原始函数
         origin_send_sync(self, event=event, data=data, sid=sid)
