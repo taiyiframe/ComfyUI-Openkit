@@ -89,6 +89,12 @@ let lastRafAt = 0;
 let currentPromptId = null; // 最近一次运行的 prompt_id（来自后端 exec_time detail）
 const RAF_INTERVAL = 100; // ~10fps 刷新画布
 
+// 任务级独占量（后端 openkit.exec_live 实时推送 / openkit.exec_end 冻结）
+let taskLiveVram = 0;   // 运行中：当前任务累计独占显存增量
+let taskLiveRam = 0;    // 运行中：当前任务累计独占内存增量
+let taskFinalVram = 0;  // 运行结束后冻结的任务独占显存
+let taskFinalRam = 0;   // 运行结束后冻结的任务独占内存
+
 /* ---------------- 历史持久化（按工作流结构 hash 隔离，LRU 淘汰） ----------------
  * localStorage["openkit_et_history_v1"] 结构：
  *   { "wf_<hash>": { workflow_name, runs: [
@@ -218,12 +224,16 @@ function applyRunToBadges(run) {
 function hydrateRunningFromRun(run) {
   if (!run) {
     runningData = { nodes: [], total: null };
+    taskFinalVram = 0;
+    taskFinalRam = 0;
   } else {
     runningData = {
       nodes: (run.nodes || []).map((n) => ({ ...n })),
       total: run.total_ms,
       restored: true,
     };
+    taskFinalVram = run.task_vram || 0;
+    taskFinalRam = run.task_ram || 0;
   }
   lastRunData = null;
 }
@@ -307,6 +317,13 @@ function restoreAfterLoad() {
   applyRunToBadges(latest);
   refreshTable();
   syncHistoryWidgets(t("Latest run"));
+  // 刷新顶部悬浮计时器（ensureTimer 在 setup 时已创建，此处仅更新显示）
+  if (timerEl) {
+    if (!isTimerMinimized() && timerTextEl) {
+      timerTextEl.textContent = (runningData.total != null) ? fmtTotal(runningData.total) : fmtTotal(0);
+    }
+    updateMetricLine();
+  }
 }
 
 function startRaf() {
@@ -334,10 +351,9 @@ function stopRaf() {
 
 let timerEl = null;
 let timerTextEl = null; // 独立 span 装时间文本，避免 textContent 清除最小化按钮
-let metricEl = null;     // 第二行：RAM / VRAM 实时占用
+let metricEl = null;     // 第二行：任务独占 显存/内存
 let minBtn = null;
 let timerAborted = false; // run interrupted/errored: keep red timer
-let metricsTimerId = null; // 轮询 /system_stats 的 interval
 const TIMER_POS_KEY = "openkit_et_timer_pos";
 const TIMER_MIN_KEY = "openkit_et_timer_minimized";
 
@@ -345,44 +361,15 @@ function isTimerMinimized() {
   return !!timerEl && timerEl.classList.contains("ok-et-minimized");
 }
 
-function fmtGB(bytes) {
-  if (!bytes || bytes <= 0) return "0G";
-  return (bytes / 1073741824).toFixed(1) + "G";
-}
-
-// 最新一次轮询到的全局内存/显存占用（供运行中节点 badge 实时显示）
-let curMem = { ramUsed: 0, vramUsed: 0 };
-
-// 拉取 /system_stats 并更新第二行指标
-async function pollSystemStats() {
-  try {
-    const r = await fetch("/system_stats");
-    if (!r.ok) return;
-    const s = await r.json();
-    const st = s.system || {};
-    const dev = (s.devices && s.devices[0]) || {};
-    const ramUsed = st.ram_total - st.ram_free;
-    const vramUsed = dev.vram_total - dev.vram_free;
-    curMem = { ramUsed, vramUsed };
-    if (!metricEl) return;
-    metricEl.innerHTML =
-      '<span style="color:#82c8e0">内存 ' + fmtGB(ramUsed) + '/' + fmtGB(st.ram_total) + '</span>' +
-      '<span style="margin:0 6px;color:#555">·</span>' +
-      '<span style="color:#a0d88a">显存 ' + fmtGB(vramUsed) + '/' + fmtGB(dev.vram_total) + '</span>';
-  } catch (e) { /* ignore */ }
-}
-
-function startMetricsPoll() {
-  stopMetricsPoll();
-  pollSystemStats();
-  metricsTimerId = setInterval(pollSystemStats, 1000);
-}
-
-function stopMetricsPoll() {
-  if (metricsTimerId !== null) {
-    clearInterval(metricsTimerId);
-    metricsTimerId = null;
-  }
+// 顶部第二行：显存（绿）→ · → 内存（蓝），只显示任务独占增量绝对值，无分母
+function updateMetricLine() {
+  if (!metricEl) return;
+  const vram = (execStartTs !== null) ? taskLiveVram : (taskFinalVram || 0);
+  const ram = (execStartTs !== null) ? taskLiveRam : (taskFinalRam || 0);
+  metricEl.innerHTML =
+    '<span style="color:#a0d88a">显存 ' + fmtBytes(vram, 1) + '</span>' +
+    '<span style="margin:0 6px;color:#555">·</span>' +
+    '<span style="color:#82c8e0">内存 ' + fmtBytes(ram, 1) + '</span>';
 }
 
 // 应用/恢复最小化样式
@@ -522,8 +509,8 @@ function ensureTimer() {
   window.addEventListener("touchend", onUp);
 
   document.body.appendChild(timerEl);
-  // 空闲时也显示一次当前资源占用（不等下次运行）
-  pollSystemStats();
+  // 空闲时显示一次上次冻结的任务独占量（无运行时显示 0）
+  updateMetricLine();
 }
 
 function showTimer() {
@@ -532,13 +519,14 @@ function showTimer() {
   timerAborted = false;
   timerEl.style.color = "#f0e68c";
   if (!isTimerMinimized()) timerTextEl.textContent = fmtTotal(0);
-  startMetricsPoll();
+  updateMetricLine();
 }
 
 function updateTimer() {
   if (!timerEl || execStartTs === null) return;
   if (isTimerMinimized()) return;
   timerTextEl.textContent = fmtTotal(performance.now() - execStartTs);
+  updateMetricLine();
 }
 
 function freezeTimer() {
@@ -547,9 +535,8 @@ function freezeTimer() {
     timerEl.style.color = timerAborted ? "#f07070" : "#aaaaaa";
   }
   execStartTs = null;
-  stopMetricsPoll();
-  // 冻结后再拉一次最终占用，作为收尾显示
-  pollSystemStats();
+  // 冻结后用当前 live 值刷新一次第二行（中断/错误时即当前任务独占量）
+  updateMetricLine();
 }
 
 /* ---------------- Badge 绘制 ---------------- */
@@ -573,8 +560,8 @@ function drawBadge(node, orig, restArgs) {
         + " 内存 " + fmtBytes(node._ok_et_ram, 1);
     } else if (node._ok_et_running !== undefined) {
       text = fmtTime(performance.now() - node._ok_et_running)
-        + " 显存 " + fmtBytes(curMem.vramUsed, 1)
-        + " 内存 " + fmtBytes(curMem.ramUsed, 1);
+        + " 显存 " + fmtBytes(node._ok_et_live_vram || 0, 1)
+        + " 内存 " + fmtBytes(node._ok_et_live_ram || 0, 1);
     }
     if (!text) return r;
 
@@ -791,16 +778,34 @@ app.registerExtension({
       startRaf();
       showTimer();
       if (runningData.total !== null) lastRunData = { ...runningData };
+      // 重置任务级独占量
+      taskLiveVram = 0;
+      taskLiveRam = 0;
+      taskFinalVram = 0;
+      taskFinalRam = 0;
       app.graph._nodes.forEach((n) => {
         delete n._ok_et_time;
         delete n._ok_et_vram;
         delete n._ok_et_ram;
         delete n._ok_et_running;
         delete n._ok_et_restored;
+        delete n._ok_et_live_vram;
+        delete n._ok_et_live_ram;
       });
       runningData = { nodes: [], total: null, aborted: false };
       viewRun = null;
       syncHistoryWidgets(t("Latest run"));
+    });
+
+    // 节点运行中每 ~500ms 推送独占量（节点级 + 任务级）
+    api.addEventListener("openkit.exec_live", ({ detail }) => {
+      const node = app.graph.getNodeById(detail.node);
+      if (node) {
+        node._ok_et_live_vram = detail.vram_delta || 0;
+        node._ok_et_live_ram = detail.ram_delta || 0;
+      }
+      taskLiveVram = detail.task_vram_delta || 0;
+      taskLiveRam = detail.task_ram_delta || 0;
     });
 
     // 节点开始执行：实时计时
@@ -811,6 +816,8 @@ app.registerExtension({
       const node = app.graph.getNodeById(nodeId);
       if (node) {
         node._ok_et_running = performance.now();
+        node._ok_et_live_vram = 0;
+        node._ok_et_live_ram = 0;
         app.graph.setDirtyCanvas(true, false);
       }
     });
@@ -843,7 +850,11 @@ app.registerExtension({
     // 运行结束
     api.addEventListener("openkit.exec_end", ({ detail }) => {
       stopRaf();
+      // 冻结最终任务独占量
+      taskFinalVram = detail.vram_used || 0;
+      taskFinalRam = detail.ram_used || 0;
       freezeTimer();
+      updateMetricLine();
       runningData.total = detail.execution_time;
       // 清除残留的运行中标记（pending/缓存节点可能未收到 exec_time）
       app.graph._nodes.forEach((n) => { delete n._ok_et_running; });
@@ -854,6 +865,8 @@ app.registerExtension({
             prompt_id: currentPromptId || detail.prompt_id || null,
             timestamp: Date.now(),
             total_ms: detail.execution_time,
+            task_vram: detail.vram_used || 0,
+            task_ram: detail.ram_used || 0,
             nodes: runningData.nodes.map((n) => ({
               node: n.node,
               class_type: n.class_type,
@@ -875,13 +888,13 @@ app.registerExtension({
     // 注意：ComfyUI 前端事件名是 execution_interrupted，不是 interrupt（interrupt 不存在）
     api.addEventListener("execution_interrupted", () => {
       stopRaf();
-      stopMetricsPoll();
       if (timerEl && execStartTs !== null) {
         if (!isTimerMinimized()) timerTextEl.textContent = fmtTotal(performance.now() - execStartTs);
         timerEl.style.color = "#f07070";
       }
       execStartTs = null;
       timerAborted = true;
+      updateMetricLine();
       // 清所有节点的运行中标记
       if (app?.graph) {
         app.graph._nodes.forEach((n) => { delete n._ok_et_running; });
@@ -894,13 +907,13 @@ app.registerExtension({
     // 执行错误：同上处理
     api.addEventListener("execution_error", () => {
       stopRaf();
-      stopMetricsPoll();
       if (timerEl && execStartTs !== null) {
         if (!isTimerMinimized()) timerTextEl.textContent = fmtTotal(performance.now() - execStartTs);
         timerEl.style.color = "#f07070";
       }
       execStartTs = null;
       timerAborted = true;
+      updateMetricLine();
       if (app?.graph) {
         app.graph._nodes.forEach((n) => { delete n._ok_et_running; });
         app.graph.setDirtyCanvas(true, false);

@@ -69,6 +69,16 @@ def _reset_peak_vram():
             pass
 
 
+def _get_current_vram():
+    """返回当前进程已分配显存（bytes，净分配，非峰值），无CUDA时返回0。"""
+    if not _HAS_CUDA:
+        return 0
+    try:
+        return torch.cuda.memory_allocated()
+    except Exception:
+        return 0
+
+
 def _get_process_mem():
     """返回当前进程工作集内存（bytes）。Windows 用 ctypes，POSIX 回退 resource。"""
     try:
@@ -99,6 +109,58 @@ def _get_process_mem():
         return int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024)
     except Exception:
         return 0
+
+
+def _live_push_loop(stop_event, server_obj, prompt_id, unique_id,
+                    start_time, node_start_vram, node_start_mem):
+    """节点运行中每 ~500ms 推送一次 openkit.exec_live。所有异常吞掉。"""
+    try:
+        while not stop_event.wait(timeout=0.5):
+            try:
+                # 节点独占增量（peak 是本节点 reset 后的峰值）
+                node_vram_delta = max(0, _get_peak_vram() - node_start_vram)
+                node_ram_delta = max(0, _get_process_mem() - node_start_mem)
+
+                task_vram_peak = _run_state.get("task_vram_peak", 0) if _run_state is not None else 0
+                task_vram_baseline = _run_state.get("task_vram_baseline", 0) if _run_state is not None else 0
+                task_mem_baseline = _run_state.get("task_mem_baseline", 0) if _run_state is not None else 0
+
+                # 任务级独占增量
+                task_cur_peak = max(task_vram_peak, _get_peak_vram())
+                task_vram_delta = max(0, task_cur_peak - task_vram_baseline)
+                task_ram_delta = max(0, _get_process_mem() - task_mem_baseline)
+
+                elapsed_ms = int((time.perf_counter() - start_time) * 1000)
+
+                if server_obj is not None and getattr(server_obj, "client_id", None) is not None:
+                    server_obj.send_sync(
+                        "openkit.exec_live",
+                        {
+                            "node": unique_id,
+                            "prompt_id": prompt_id,
+                            "vram_delta": node_vram_delta,
+                            "ram_delta": node_ram_delta,
+                            "task_vram_delta": task_vram_delta,
+                            "task_ram_delta": task_ram_delta,
+                            "elapsed_ms": elapsed_ms,
+                        },
+                        server_obj.client_id,
+                    )
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
+def _stop_live_thread(stop_event, thread):
+    """停止 live 推送线程（Event.set + join 超时1s）。异常吞掉。"""
+    try:
+        if stop_event is not None:
+            stop_event.set()
+        if thread is not None:
+            thread.join(timeout=1)
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -140,6 +202,16 @@ async def _execute_wrapper_core(origin_execute, *args, **kwargs):
 
     unique_id = current_item
 
+    # 先把上一节点结束时的全局峰值累加到任务级峰值，再重置本节点峰值计数器
+    if _run_state is not None:
+        try:
+            _run_state["task_vram_peak"] = max(
+                _run_state.get("task_vram_peak", 0),
+                _get_peak_vram(),
+            )
+        except Exception:
+            pass
+
     # 入口：记录开始时间、VRAM、内存（所有分支均覆盖，包括缓存命中）
     start_time = time.perf_counter()
     _reset_peak_vram()
@@ -151,6 +223,21 @@ async def _execute_wrapper_core(origin_execute, *args, **kwargs):
         class_type = dynprompt.get_node(unique_id).get('class_type', '?')
     except Exception:
         class_type = '?'
+
+    # 启动 live 推送线程（仅在有前端 client 时），节点运行中每 ~500ms 推送一次
+    _live_stop = threading.Event()
+    _live_thread = None
+    try:
+        if server_obj is not None and getattr(server_obj, "client_id", None) is not None:
+            _live_thread = threading.Thread(
+                target=_live_push_loop,
+                args=(_live_stop, server_obj, prompt_id, unique_id,
+                      start_time, start_vram, start_mem),
+                daemon=True,
+            )
+            _live_thread.start()
+    except Exception:
+        _live_thread = None
 
     # 执行原始函数：origin_execute 自身的异常必须正常透传（那是 ComfyUI 执行错误）
     try:
@@ -169,6 +256,9 @@ async def _execute_wrapper_core(origin_execute, *args, **kwargs):
         except Exception:
             pass
         raise
+    finally:
+        # 节点执行结束（含 pending / 缓存命中 / 异常）：停止 live 推送线程
+        _stop_live_thread(_live_stop, _live_thread)
 
     # PENDING 分支（异步节点尚未真正开始计算）：不发计时事件，发 scheduled 标记
     is_pending = False
@@ -208,6 +298,16 @@ async def _execute_wrapper_core(origin_execute, *args, **kwargs):
         vram_delta = max(0, end_vram - start_vram)
         mem_delta = max(0, _get_process_mem() - start_mem)
 
+        # 把本节点 exit 时的峰值（绝对量）累加到任务级峰值
+        if _run_state is not None:
+            try:
+                _run_state["task_vram_peak"] = max(
+                    _run_state.get("task_vram_peak", 0),
+                    end_vram,
+                )
+            except Exception:
+                pass
+
         if server_obj is not None and getattr(server_obj, "client_id", None) is not None:
             server_obj.send_sync(
                 "openkit.exec_time",
@@ -241,9 +341,17 @@ def _make_send_sync_wrapper(origin_send_sync):
         global _run_state
 
         if event == "execution_start":
+            # 先重置峰值计数器，再记录任务级 baseline（此时 peak == current allocated）
+            try:
+                _reset_peak_vram()
+            except Exception:
+                pass
             _run_state = {
                 "start_time": time.perf_counter(),
                 "nodes": {},
+                "task_vram_baseline": _get_current_vram(),
+                "task_vram_peak": 0,
+                "task_mem_baseline": _get_process_mem(),
             }
 
         # Node start (only real executions; cache hits do not fire): track executed set
@@ -256,12 +364,32 @@ def _make_send_sync_wrapper(origin_send_sync):
                 # frontend always receives stats before any end-of-run teardown signal.
                 total_ms = int((time.perf_counter() - _run_state["start_time"]) * 1000)
                 end_prompt_id = data.get("prompt_id") if isinstance(data, dict) else None
+                # 任务级独占显存/内存增量
+                vram_used = 0
+                ram_used = 0
+                try:
+                    task_vram_baseline = _run_state.get("task_vram_baseline", 0)
+                    task_mem_baseline = _run_state.get("task_mem_baseline", 0)
+                    # 最后再取一次全局峰值累加到任务级
+                    _run_state["task_vram_peak"] = max(
+                        _run_state.get("task_vram_peak", 0),
+                        _get_peak_vram(),
+                    )
+                    vram_used = max(0, _run_state.get("task_vram_peak", 0) - task_vram_baseline)
+                    ram_used = max(0, _get_process_mem() - task_mem_baseline)
+                except Exception:
+                    pass
                 try:
                     if sid is not None:
                         origin_send_sync(
                             self,
                             event="openkit.exec_end",
-                            data={"execution_time": total_ms, "prompt_id": end_prompt_id},
+                            data={
+                                "execution_time": total_ms,
+                                "prompt_id": end_prompt_id,
+                                "vram_used": vram_used,
+                                "ram_used": ram_used,
+                            },
                             sid=sid,
                         )
                     else:
