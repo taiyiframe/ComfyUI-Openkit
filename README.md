@@ -188,6 +188,22 @@ Visual editor for complex H3 six-part JSON prompts. Seven top-level modules (整
 
 ---
 
+### 9. OpenkitMemoryCleanup (显存内存清理)
+
+Combined VRAM and RAM cleanup node. Optionally offloads all models, clears VRAM cache (gc + soft_empty_cache + free_memory flag), cleans file cache, enumerates and trims process working sets on Windows, and trims malloc on Linux. Zero third-party dependencies.
+
+合并 VRAM 与 RAM 清理为单一节点。可选卸载全部模型、清理显存缓存（gc + soft_empty_cache + free_memory flag）、清理文件缓存、Windows 上枚举并修剪进程工作集、Linux 上 malloc_trim。零第三方依赖。
+
+---
+
+### 10. OpenkitExecutionTime (执行时间统计)
+
+Virtual node that displays a per-node execution time and peak VRAM delta table with a draggable top floating timer. Patches `execution.execute` at the wrapper entry to record start time across all branches (including cache hits), and supports CSV export.
+
+虚拟节点，展示各节点执行耗时与峰值显存增量对比表，带可拖动顶部悬浮总计时器。在 `execution.execute` 包装器入口记录开始时间，覆盖所有分支（含缓存命中），支持导出 CSV。
+
+---
+
 ## Installation / 安装方法
 
 ### Method 1: Git Clone / 方法一：Git 克隆
@@ -195,7 +211,7 @@ Visual editor for complex H3 six-part JSON prompts. Seven top-level modules (整
 ```bash
 cd ComfyUI/custom_nodes/
 git clone https://github.com/taiyiframe/ComfyUI-Openkit.git
-# or Gitee mirror: https://gitee.com/dbmcp/ComfyUI-Openkit.git
+# or Gitee mirror: https://gitee.com/taiyiframe/ComfyUI-Openkit.git
 ```
 
 ### Method 2: Manual / 方法二：手动安装
@@ -244,6 +260,8 @@ ComfyUI-Openkit/
 │   ├── media_loader.py      # MediaLoader + ReferenceSplitter / 素材加载与拆分节点
 │   ├── tab_string_multiline.py  # TabStringMultiline / 多Tab字符串节点
 │   ├── multi_segment_prompt_editor.py  # MultiSegmentPromptEditor / 多段提示词编辑器节点
+│   ├── execution_time.py    # OpenkitExecutionTime / 执行时间统计节点
+│   ├── memory_cleanup.py    # OpenkitMemoryCleanup / 显存内存清理节点
 │   ├── media_io.py          # Image/video/audio decoding helpers / 图/视频/音频解码辅助
 │   └── media_routes.py      # Upload/probe/preset HTTP routes / 上传/探测/预设服务路由
 ├── web/

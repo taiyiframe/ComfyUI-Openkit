@@ -1,0 +1,33 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# Python source
+*.py text eol=lf
+*.pyi text eol=lf
+
+# JavaScript / Web
+*.js text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+
+# Markdown / docs
+*.md text eol=lf
+*.txt text eol=lf
+
+# Config
+*.toml text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+.gitattributes text eol=lf
+.gitignore text eol=lf
+
+# Binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary

@@ -212,6 +212,10 @@ app.registerExtension({
         hideOnZoom: false,
         serialize: false,
       });
+      // 兼容 ComfyUI-Prompt-Assistant：把当前活动文本框暴露为 inputEl，
+      // 并使用其白名单名称 "text"，使提示词小助手绿色按钮可挂载到本节点
+      domWidget.inputEl = ta;
+      domWidget.name = "text";
       domWidget.computeLayoutSize = () => {
         const nw = Math.max(380, this.size?.[0] || 380);
         const nh = Math.max(300, (this.size?.[1] || 0) - 34);
