@@ -30,6 +30,8 @@ pkg/site/
 # 开发 / 测试（不随插件发布，仅本地开发用）
 .preview/
 node_modules/
+tests/
+AGENTS.md
 
 # 历史资料库归档(不跟踪)
 arch/
