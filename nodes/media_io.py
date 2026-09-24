@@ -67,21 +67,100 @@ def can_decode_video():
     return _have_av() or bool(_ffmpeg())
 
 
-def resolve(annotated):
-    """'name [input]' or 'sub/name' -> absolute path inside ComfyUI's dirs."""
-    if folder_paths is not None:
-        try:
-            return folder_paths.get_annotated_filepath(annotated)
-        except Exception:
-            pass
+def _strip_annotated_suffix(annotated):
+    """Remove ' [input]' / ' [output]' / ' [temp]' suffix, return bare name."""
     name = annotated
     for suffix in (" [input]", " [output]", " [temp]"):
         if name.endswith(suffix):
             name = name[: -len(suffix)]
             break
-    if folder_paths is not None:
-        return os.path.join(folder_paths.get_input_directory(), name)
     return name
+
+
+def _candidate_input_dirs():
+    """Return all plausible ComfyUI input directories, de-duplicated, in priority order.
+
+    Covers: current folder_paths.get_input_directory() (respects --input-directory),
+    the CLI --input-directory value directly, and the built-in default
+    <comfyui_root>/input.  This makes file resolution robust when folder_paths
+    state is stale or the process was launched with different flags between
+    upload and execution.
+    """
+    dirs = []
+    if folder_paths is not None:
+        try:
+            dirs.append(folder_paths.get_input_directory())
+        except Exception:
+            pass
+        # Built-in default: folder_paths.py lives in <comfyui_root>, so its
+        # directory's "input" sibling is the hard-coded default.
+        try:
+            default_input = os.path.join(
+                os.path.dirname(os.path.realpath(folder_paths.__file__)), "input"
+            )
+            dirs.append(default_input)
+        except Exception:
+            pass
+    # CLI override directly — read fresh so a stale folder_paths can't hide it.
+    try:
+        from comfy.cli_args import args
+        if getattr(args, "input_directory", None):
+            dirs.append(os.path.abspath(args.input_directory))
+    except Exception:
+        pass
+    seen = set()
+    unique = []
+    for d in dirs:
+        if d and d not in seen:
+            seen.add(d)
+            unique.append(d)
+    return unique
+
+
+def resolve(annotated):
+    """'name [input]' or 'sub/name' -> absolute path that actually exists.
+
+    Tries ComfyUI's annotated resolution first, then falls back through every
+    known input directory.  Raises FileNotFoundError with the full search list
+    so misconfigured input directories are diagnosable instead of silently
+    pointing at a non-existent default path.
+    """
+    name = _strip_annotated_suffix(annotated)
+    candidates = []
+
+    # 1. ComfyUI's own annotated resolution (handles [input]/[output]/[temp]).
+    if folder_paths is not None:
+        try:
+            candidates.append(folder_paths.get_annotated_filepath(annotated))
+        except Exception:
+            pass
+
+    # 2. Every known input directory joined with the bare relative name.
+    for base in _candidate_input_dirs():
+        candidates.append(os.path.join(base, name))
+
+    # 3. If the caller passed an absolute path, keep it as a last resort.
+    if os.path.isabs(annotated):
+        candidates.append(annotated)
+
+    # Deduplicate while preserving order.
+    seen = set()
+    unique = []
+    for c in candidates:
+        if c not in seen:
+            seen.add(c)
+            unique.append(c)
+
+    for p in unique:
+        if os.path.exists(p):
+            return p
+
+    tried = "\n  ".join(unique) if unique else "(no candidates)"
+    raise FileNotFoundError(
+        f"[Openkit] Media file not found: {annotated!r}\n"
+        f"Searched in:\n  {tried}\n"
+        f"Tip: check --input-directory and whether the file was uploaded there."
+    )
 
 
 def load_image(annotated, crop=None):
