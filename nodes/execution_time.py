@@ -190,6 +190,13 @@ async def _execute_wrapper_core(origin_execute, *args, **kwargs):
         bound.apply_defaults()
         arguments = bound.arguments
         current_item = arguments.get("current_item")
+        # P2修复: 参数名脆弱——若 ComfyUI 把 current_item 改名，依次尝试常见变体
+        # (node_id / item)，避免取不到节点 id 导致计时静默全灭。
+        if current_item is None:
+            for _alt in ("node_id", "item"):
+                if arguments.get(_alt) is not None:
+                    current_item = arguments[_alt]
+                    break
         prompt_id = arguments.get("prompt_id")
         server_obj = arguments.get("server_obj") or arguments.get("server")  # 0.35 signature uses `server`
         dynprompt = arguments.get("dynprompt")
@@ -201,6 +208,13 @@ async def _execute_wrapper_core(origin_execute, *args, **kwargs):
         dynprompt = args[1] if len(args) > 1 else None
 
     unique_id = current_item
+
+    # P2修复: 签名变化后仍取不到节点 id(current_item/node_id/item 都没有)时，
+    # 打印一次警告并 graceful 降级——直接透传原函数、不做任何统计，
+    # 而不是让 unique_id=None 在下游被静默吞掉、计时看似正常实则全灭。
+    if unique_id is None:
+        print(f"[Openkit][exec_time] 警告: execution.execute 签名变化，未找到 current_item 参数，计时功能停用")
+        return await origin_execute(*args, **kwargs)
 
     # 先把上一节点结束时的全局峰值累加到任务级峰值，再重置本节点峰值计数器
     if _run_state is not None:

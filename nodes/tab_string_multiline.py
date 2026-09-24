@@ -78,13 +78,18 @@ class TabStringMultiline:
         if not isinstance(tabs, list):
             tabs = []
 
-        if 0 <= idx < len(tabs):
-            text = tabs[idx]
-        elif tabs:
-            text = tabs[0]
-            idx = 0  # 收敛时同步修正输出索引
-        else:
+        if not tabs:
+            # 无任何 Tab 页：空串 + 索引 0
             text = ""
             idx = 0
+        elif not (0 <= idx < len(tabs)):
+            # P1修复: 越界钳制方向与前端联动语义对齐——钳到末页而非首页。
+            # 旧实现钳首页(text=tabs[0])会让越界索引静默输出首Tab内容，与前端
+            # setCurTab 越界不动的行为相反；现统一收敛到末页并打印告警。
+            print(f"[Openkit] Tab索引越界: idx={idx}, tabs={len(tabs)}, 钳制到末页")
+            idx = max(0, min(idx, len(tabs) - 1))
+            text = tabs[idx]
+        else:
+            text = tabs[idx]
 
         return (str(text), idx)

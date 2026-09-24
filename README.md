@@ -174,9 +174,29 @@ Fan a `MEDIA_REFS` bundle out into **4 category picture list ports** (关键帧/
 
 ### 7. TabStringMultiline (多Tab字符串)
 
-Multi-tab multiline string editor with add/delete tabs, double-click rename, and per-tab text content.
+Multi-tab multiline string editor with add/delete tabs, double-click rename, and per-tab text content. Supports Tab-index linkage: can act as both a linkage source (Tab index output) and a linkage target (tab_index_in input).
 
-多 Tab 多行字符串编辑器，支持增删 Tab、双击重命名、每 Tab 独立文本内容。
+多 Tab 多行字符串编辑器，支持增删 Tab、双击重命名、每 Tab 独立文本内容。支持 Tab 索引联动：既可作为联动源（Tab 索引输出），也可作为联动目标（`tab_index_in` 输入）。
+
+**Inputs / 输入:**
+
+| Port / 端口 | Type / 类型 | Description / 说明 |
+|---|---|---|
+| `Tab索引` | INT (widget) | Current tab index selector (0-based) / 当前 Tab 索引选择器（从 0 开始） |
+| `tab_index_in` | INT (forceInput, optional) | Linkage input port. Sentinel default `-1` means "not connected"; when wired, the connected value takes precedence over the widget at runtime / 联动输入端口。默认 `-1` 为哨兵值表示未连线；连线后运行时以连线值为准（覆盖 widget） |
+
+**Outputs / 输出:**
+
+| Port / 端口 | Type / 类型 | Description / 说明 |
+|---|---|---|
+| `文本` | STRING | Text content of the currently selected tab / 当前选中 Tab 的文本内容 |
+| `Tab索引` | INT | The effective tab index after clamping/fallback / 越界收敛后实际生效的 Tab 索引 |
+
+**Tab Linkage / Tab 联动:**
+
+- This node can be a **linkage source**: its `Tab索引` (INT) output can be wired to downstream multi-tab nodes' `tab_index_in`; clicking the "link switch" button broadcasts the index along the wire graph with loop protection and out-of-range clamping / 本节点可作联动源：`Tab索引`(INT) 输出可接下游多 Tab 节点的 `tab_index_in`；点击「联动切换」按钮沿连线图广播索引，带环路防护与越界钳制
+- This node can also be a **linkage target**: wire an upstream node's `Tab索引` output to this node's `tab_index_in`; at runtime the wired value overrides the widget / 本节点也可作联动目标：将上游节点的 `Tab索引` 输出接到本节点 `tab_index_in`，运行时连线值覆盖 widget
+- **MediaLoader note**: MediaLoader's Tab linkage is a visual switch (it mutates the widget value). At runtime the widget value is authoritative — the runtime always reads the widget, not a live broadcast / MediaLoader 的 Tab 联动为视觉切换（修改 widget 值）；运行时以 widget 值为准，不依赖实时广播
 
 ---
 

@@ -252,7 +252,12 @@ def _audio_via_ffmpeg(path):
             "no ffmpeg on PATH. Install ffmpeg or supply a WAV file.")
     cmd = [exe, "-v", "error", "-i", path, "-f", "f32le", "-acodec", "pcm_f32le",
            "-ac", "2", "-ar", str(AUDIO_SR), "-"]
-    raw = subprocess.run(cmd, capture_output=True, check=True).stdout
+    # P2修复: subprocess 无 timeout 会在 ffmpeg 异常挂起时永久阻塞执行队列，加 30s 超时
+    try:
+        raw = subprocess.run(cmd, capture_output=True, check=True, timeout=30).stdout
+    except subprocess.TimeoutExpired:
+        print(f"[Openkit media_io] ffmpeg 解码音频超时(30s): {os.path.basename(path)}")
+        raise
     if not raw:
         raise RuntimeError(f"{os.path.basename(path)} contains no decodable audio.")
     data = np.frombuffer(raw, dtype=np.float32).reshape(-1, 2).T.copy()
@@ -321,10 +326,15 @@ def _dimensions(path):
     exe = _ffprobe()
     if not exe:
         raise RuntimeError("ffprobe not found; can't determine video dimensions.")
-    out = subprocess.run(
-        [exe, "-v", "error", "-select_streams", "v:0", "-show_entries",
-         "stream=width,height", "-of", "csv=p=0:s=x", path],
-        capture_output=True, text=True, check=True).stdout.strip()
+    # P2修复: subprocess 无 timeout 会永久阻塞，加 30s 超时
+    try:
+        out = subprocess.run(
+            [exe, "-v", "error", "-select_streams", "v:0", "-show_entries",
+             "stream=width,height", "-of", "csv=p=0:s=x", path],
+            capture_output=True, text=True, check=True, timeout=30).stdout.strip()
+    except subprocess.TimeoutExpired:
+        print(f"[Openkit media_io] ffprobe 读取尺寸超时(30s): {os.path.basename(path)}")
+        raise
     w, h = out.split("x")[:2]
     return int(w), int(h)
 
@@ -394,7 +404,12 @@ def _frames_via_ffmpeg(path, fps, max_frames, start=None, end=None):
     if max_frames:
         cmd += ["-frames:v", str(int(max_frames))]
     cmd += ["-"]
-    raw = subprocess.run(cmd, capture_output=True, check=True).stdout
+    # P2修复: subprocess 无 timeout 会永久阻塞，加 30s 超时
+    try:
+        raw = subprocess.run(cmd, capture_output=True, check=True, timeout=30).stdout
+    except subprocess.TimeoutExpired:
+        print(f"[Openkit media_io] ffmpeg 解码视频超时(30s): {os.path.basename(path)}")
+        raise
     if not raw:
         raise RuntimeError(f"No video frames decoded from {os.path.basename(path)}.")
     # scale forces the exact decoded size so reshape always matches.
@@ -437,11 +452,17 @@ def probe(annotated):
     exe = _ffprobe()
     if exe:
         try:
-            out = subprocess.run(
-                [exe, "-v", "error", "-show_entries",
-                 "format=duration:stream=codec_type,width,height",
-                 "-of", "default=nw=1", path],
-                capture_output=True, text=True, check=True).stdout
+            # P2修复: subprocess 无 timeout 会永久阻塞，加 30s 超时；
+            # probe 不抛异常，超时打印后返回已采集信息。
+            try:
+                out = subprocess.run(
+                    [exe, "-v", "error", "-show_entries",
+                     "format=duration:stream=codec_type,width,height",
+                     "-of", "default=nw=1", path],
+                    capture_output=True, text=True, check=True, timeout=30).stdout
+            except subprocess.TimeoutExpired:
+                print(f"[Openkit media_io] ffprobe 探测超时(30s): {os.path.basename(path)}")
+                return info
             for line in out.splitlines():
                 k, _, v = line.partition("=")
                 if k == "duration" and v:

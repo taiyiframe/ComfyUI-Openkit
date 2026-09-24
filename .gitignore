@@ -30,8 +30,12 @@ pkg/site/
 # 开发 / 测试（不随插件发布，仅本地开发用）
 .preview/
 node_modules/
-tests/
+# P1修复: tests/ 纳入版本控制（单测需随仓库交付，回归可复跑）
+# tests/
 AGENTS.md
+
+# 评审草稿（本地评审记录，不跟踪）
+review_*.md
 
 # 历史资料库归档(不跟踪)
 arch/

@@ -1,3 +1,9 @@
 # Runtime dependencies for ComfyUI-Openkit
 # Core nodes use only Python standard library (re / json).
 # Add third-party packages here when new nodes require them.
+#
+# 以下依赖由 ComfyUI 核心环境自带，本插件不重复声明：
+#   - torch / numpy / Pillow(PIL) / opencv-python(cv2) —— ComfyUI 运行环境必装
+# 以下为可选依赖，代码中已有 try/except 容错，缺失时对应功能降级不影响插件加载：
+#   - av / torchaudio —— 音视频解码可选增强（media_io.py 中 try/except 导入）
+# 因此本插件自身无强制第三方依赖，dependencies 保持为空。

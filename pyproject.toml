@@ -3,6 +3,8 @@ name = "ComfyUI-Openkit"
 version = "0.2.0"
 description = "Personal ComfyUI utility node collection"
 requires-python = ">=3.10"
+# 无强制第三方依赖：torch/cv2/numpy/PIL 由 ComfyUI 核心环境提供；
+# av/torchaudio 为可选（代码内 try/except 容错）。详见 requirements.txt。
 dependencies = []
 
 [tool.comfyui]

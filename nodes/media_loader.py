@@ -410,7 +410,9 @@ class ReferenceSplitter:
         #   AUDIO port        -> silent audio dict
         #   IMAGE (video) port -> 1-frame black clip tensor
         empty_audio = {"waveform": torch.zeros(1, 1, 1000), "sample_rate": 32000}
-        empty_video = torch.zeros(3, 1, 64, 64, 3)
+        # P2修复: empty_video 用 4D (1,64,64,3) 与真实视频输出[N,H,W,3]一致；
+        # 旧的 5D (3,1,64,64,3) 会让下游 multiframe_ref 的空图形状检测失配。
+        empty_video = torch.zeros(1, 64, 64, 3)
 
         audios_out = pad(audios, self.MAX_AUDIOS, "音频")
         videos_out = pad(videos, self.MAX_VIDEOS, "视频")
