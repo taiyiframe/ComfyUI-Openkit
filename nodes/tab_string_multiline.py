@@ -40,16 +40,32 @@ class TabStringMultiline:
                     "tooltip": "前端自动管理的全部 Tab 页内容与标题（JSON），请勿手工修改。",
                 }),
             },
+            "optional": {
+                # 接收上游节点「Tab索引」输出的连线输入。仅作连线端口（forceInput），
+                # 不渲染独立控件；前端联动 broadcast 已即时切换显示，运行时连线值
+                # 作为生效索引。用 -1 作哨兵：未连线时 ComfyUI 传 default=-1，
+                # 据此回退到上方「Tab索引」widget 的值。
+                "tab_index_in": ("INT", {
+                    "default": -1,
+                    "min": -1,
+                    "max": cls.MAX_TAB_COUNT - 1,
+                    "step": 1,
+                    "forceInput": True,
+                    "tooltip": "接收上游节点的 Tab索引 连线输入。有连线时优先使用此值；未连线（-1）时回退使用「Tab索引」控件值。",
+                }),
+            },
         }
 
-    RETURN_TYPES = ("STRING",)
-    RETURN_NAMES = ("文本",)
+    RETURN_TYPES = ("STRING", "INT")
+    RETURN_NAMES = ("文本", "Tab索引")
     FUNCTION = "execute"
     CATEGORY = "Openkit/工具"
 
-    def execute(self, Tab索引=0, tabs_content="{}"):
+    def execute(self, Tab索引=0, tabs_content="{}", tab_index_in=-1):
+        # 有连线输入(>=0)时优先用连线值；未连线传哨兵 -1，回退到 widget「Tab索引」
+        raw_idx = tab_index_in if (tab_index_in is not None and tab_index_in >= 0) else Tab索引
         try:
-            idx = int(Tab索引)
+            idx = int(raw_idx)
         except (TypeError, ValueError):
             idx = 0
 
@@ -66,7 +82,9 @@ class TabStringMultiline:
             text = tabs[idx]
         elif tabs:
             text = tabs[0]
+            idx = 0  # 收敛时同步修正输出索引
         else:
             text = ""
+            idx = 0
 
-        return (str(text),)
+        return (str(text), idx)

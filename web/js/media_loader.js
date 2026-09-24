@@ -10,6 +10,7 @@ import { app } from "../../../scripts/app.js";
 import { api } from "../../../scripts/api.js";
 import { OKT } from "./openkit_i18n.js";
 import { injectOpenkitUI, oktSurface } from "./openkit_ui.js";
+import { broadcastTabIndex } from "./tab_link_sync.js";
 
 export const LOADER_NAME = "MediaLoader";
 export const SPLITTER_NAME = "ReferenceSplitter";
@@ -3167,6 +3168,9 @@ class MultiTabManager {
     if (isNaN(v)) v = 0;
     v = Math.max(0, Math.min(n - 1, v));
     this.setCurTab(v);
+    // 沿 Tab索引 输出端口(slot 1)联动下游多 Tab 节点切换
+    try { broadcastTabIndex(this.node, 1, v, new Set([this.node.id])); }
+    catch (e) { console.warn("[Openkit] tab link broadcast failed:", e); }
   }
 }
 

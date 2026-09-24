@@ -16,6 +16,7 @@
 import { app } from "../../../scripts/app.js";
 import { OKT } from "./openkit_i18n.js";
 import { injectOpenkitUI, oktSurface } from "./openkit_ui.js";
+import { broadcastTabIndex } from "./tab_link_sync.js";
 
 const NODE_NAME = "TabStringMultiline";
 const MAX_TAB_COUNT = 64;
@@ -114,6 +115,9 @@ function buildRoot(node) {
     input.value = String(v);
     node._tsmSetCurTab(v);
     node._tsmSyncIdx();
+    // 沿 Tab索引 输出端口(slot 1)联动下游多 Tab 节点切换
+    try { broadcastTabIndex(node, 1, v, new Set([node.id])); }
+    catch (e) { console.warn("[Openkit] tab link broadcast failed:", e); }
   });
   input.addEventListener("change", () => {
     let v = parseInt(input.value, 10);
@@ -204,6 +208,14 @@ app.registerExtension({
         };
       }
 
+      // 隐藏 tab_index_in 输入端口的原生控件（该端口专为联动连线设计，
+      // 不需要独立输入框；连线圆点仍由 ComfyUI 渲染）。
+      const tabInW = this.widgets?.find((w) => w.name === "tab_index_in");
+      if (tabInW) {
+        tabInW.hidden = true;
+        tabInW.type = "hidden";
+        tabInW.computeSize = () => [0, -4];
+      }
       const root = buildRoot(this);
       const domWidget = this.addDOMWidget("tsm_panel", "div", root, {
         getMinHeight: () => 260,
@@ -444,6 +456,8 @@ app.registerExtension({
         this._tsmRefresh();
       };
       this._tsmLoad();
+      // slot 1 为新增的 Tab索引 输出端口：挂上中文说明 tooltip
+      try { if (this.outputs && this.outputs[1]) this.outputs[1].tooltip = "把当前 Tab 索引(INT)输出给下游；连到下游 tab_index_in 可联动切换其页签"; } catch (e) { /* 端口由 Python 声明渲染 */ }
       return r;
     };
 

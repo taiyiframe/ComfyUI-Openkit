@@ -1,0 +1,6 @@
+{
+  "name": "comfyui-openkit",
+  "private": true,
+  "type": "module",
+  "description": "ComfyUI-Openkit custom node pack. type:module enables running the Node-based unit tests under tests/ with plain `node tests/...js`; browser loading of web/js is unaffected."
+}
