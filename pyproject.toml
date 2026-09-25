@@ -1,6 +1,6 @@
 [project]
 name = "ComfyUI-Openkit"
-version = "0.2.0"
+version = "0.3.0"
 description = "Personal ComfyUI utility node collection"
 requires-python = ">=3.10"
 # 无强制第三方依赖：torch/cv2/numpy/PIL 由 ComfyUI 核心环境提供；

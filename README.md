@@ -18,6 +18,7 @@ Open, standardized ComfyUI utility node collection. No black-box encapsulation, 
 - **Extreme rendering performance** — Windowed virtual rendering (only visible cards exist in the DOM), container-level event delegation, lazy thumbnails, rAF-batched dimension-learning commits, and proactive media-buffer release keep memory and CPU minimal on unlimited media
 - **Standard ComfyUI plugin structure** — Follows official conventions, easy to install and extend
 - **Fully documented** — Every input, output, and internal logic is explained
+- **Sol-Attn sparse attention acceleration** — Training-free block-sparse attention for MiniMax-H3 (optional GPU kernel via comfy_kitchen)
 
 - **JSON 驱动提示词生成** — 从 JSON 提取结构化数据，生成 MiniMax H3 六段式标准提示词
 - **多帧参考管理** — 管理关键帧、图像列表与背景层，索引顺序正确
@@ -29,6 +30,7 @@ Open, standardized ComfyUI utility node collection. No black-box encapsulation, 
 - **极致渲染性能** — 窗口化虚拟渲染（DOM 中只存在可视区卡片）、容器级事件委托、缩略图懒加载、rAF 合并尺寸学习提交、重型媒体缓冲主动释放，素材无上限时内存与 CPU 占用极小
 - **标准 ComfyUI 插件结构** — 遵循官方规范，易于安装与扩展
 - **完整文档** — 每个输入、输出及内部逻辑均有说明
+- **Sol-Attn 稀疏注意力加速** — 面向 MiniMax-H3 的训练免训练 block-sparse 注意力（可选 GPU 内核，需 comfy_kitchen）
 
 ---
 
@@ -224,6 +226,41 @@ Virtual node that displays a per-node execution time and peak VRAM delta table w
 
 ---
 
+### 11. OpenkitSolAttnMiniMax (Sol-Attn稀疏注意力(H3))
+
+Sol-Attn (arXiv 2607.24027) training-free block-sparse attention node, specialized for MiniMax-H3. Includes H3 conditioning exact-KV sink, Morton (Z-order) video token reordering, per-block `tau_profile` and `dense_blocks` gating, sigma-scheduled dense warm-up, and long-context optimization. Optional GPU-accelerated node: requires comfy_kitchen with the sol_attn kernel (bf16/fp16, head_dim 128, sm_80+); if the kernel is absent the plugin still loads normally, and only this node emits a Chinese prompt at execution time.
+
+Sol-Attn（arXiv 2607.24027）训练免训练 block-sparse 注意力节点，专给 MiniMax-H3。含 H3 conditioning exact-KV sink、Morton(Z-order) 视频 token 重排、per-block `tau_profile` 与 `dense_blocks` 门控、sigma 调度 dense warm-up、长上下文优化。可选 GPU 增强节点，需 comfy_kitchen 带 sol_attn 内核（bf16/fp16, head_dim 128, sm_80+）；缺失时插件仍可正常加载，仅该节点执行时报中文提示。
+
+CATEGORY: `Openkit/效率工具`
+
+**Inputs / 输入:**
+
+| Port / 端口 | Type / 类型 | Description / 说明 |
+|---|---|---|
+| `model` | MODEL | Model to patch / 待 patch 的模型 |
+| `tau` | FLOAT | Threshold beta; higher = sparser (default: 1.3) / 阈值 beta，越高越稀疏（默认 1.3） |
+| `start_percent` | FLOAT | Keep dense before this sampling percent (default: 0.2) / 在此采样百分比前保持 dense（默认 0.2） |
+| `end_percent` | FLOAT | Keep dense after this sampling percent (default: 0.9) / 在此采样百分比后保持 dense（默认 0.9） |
+| `min_tokens` | INT | Keep dense when sequence shorter than this (default: 12288) / 序列短于此值保持 dense（默认 12288） |
+| `sink_conditioning` | COMBO | `exact_kv` / `exact_kv_and_rows` / `off` (default: `exact_kv_and_rows`) |
+| `morton` | BOOLEAN | Morton Z-order video token reordering (default: False) / Morton Z-order 视频重排（默认 False） |
+| `morton_curve` | COMBO | `3d` / `2d_frame` (default: `2d_frame`) |
+| `centroid_tail` | BOOLEAN | Centroid tail evaluation (default: True) / centroid 尾项评估（默认 True） |
+| `routed_cap_percent` | INT | Routed block cap percent, 0 = unlimited (default: 0); >0 switches to SLA top-k mode and disables tau / routed block 上限百分比，0=不限（默认 0）；>0 时切换为 SLA top-k 模式且 tau 失效 |
+| `reuse_qkv_memory` | BOOLEAN | Reuse qkv buffer on output (default: False; ignored by current kernel) / 输出复用 qkv 缓冲（默认 False，当前内核版本此选项已内建忽略） |
+| `verbose` | BOOLEAN | Verbose logs (default: False) / 详细日志（默认 False） |
+| `dense_blocks` | STRING | Transformer blocks kept dense, e.g. `"0-2,-1"` / 保持 dense 的 transformer block，如 `"0-2,-1"` |
+| `tau_profile` | STRING (optional) | Per-block tau override, e.g. `"39-42=0.9"` / per-block tau 覆盖，如 `"39-42=0.9"` |
+
+**Outputs / 输出:**
+
+| Port / 端口 | Type / 类型 | Description / 说明 |
+|---|---|---|
+| `model` | MODEL | Patched model / patch 后的模型 |
+
+---
+
 ## Installation / 安装方法
 
 ### Method 1: Git Clone / 方法一：Git 克隆
@@ -282,6 +319,7 @@ ComfyUI-Openkit/
 │   ├── multi_segment_prompt_editor.py  # MultiSegmentPromptEditor / 多段提示词编辑器节点
 │   ├── execution_time.py    # OpenkitExecutionTime / 执行时间统计节点
 │   ├── memory_cleanup.py    # OpenkitMemoryCleanup / 显存内存清理节点
+│   ├── sol_attn_minimax.py    # OpenkitSolAttnMiniMax / Sol-Attn稀疏注意力(H3)
 │   ├── media_io.py          # Image/video/audio decoding helpers / 图/视频/音频解码辅助
 │   └── media_routes.py      # Upload/probe/preset HTTP routes / 上传/探测/预设服务路由
 ├── web/
@@ -336,6 +374,7 @@ JavaScript 文件放置在 `web/js/` 下，ComfyUI 启动时自动加载。用�
 - ComfyUI latest stable / ComfyUI 最新稳定版
 - Python 3.10+
 - No external dependencies beyond ComfyUI core / 除 ComfyUI 核心外无外部依赖
+- Optional: comfy_kitchen with the sol_attn kernel (bf16/fp16, head_dim 128, sm_80+) to enable the Sol-Attn MiniMax node; if absent, the plugin still loads and all other nodes work, only this node is unavailable / 可选：comfy_kitchen 带 sol_attn 内核（bf16/fp16, head_dim 128, sm_80+）以启用 Sol-Attn MiniMax 节点；缺失时插件仍可加载，其他节点正常工作，仅该节点不可用
 
 ---
 

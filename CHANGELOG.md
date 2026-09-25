@@ -9,6 +9,7 @@
 - OpenkitExecutionTime：badge 中文显示 + 内存显存双指标实时显示（commit 7f3d09c）
 - OpenkitExecutionTime：节点/任务级独占显存内存采集 + WebSocket live 推送（`openkit.exec_live`）+ 顶部悬浮条顺序调整为 耗时→显存→内存（commit 38f179a）。注意：live 推送为前端↔后端 WebSocket 协议级变更，新增了 `openkit.exec_live` 消息类型
 - TabStringMultiline Tab索引联动切换：多Tab字符串节点新增 `Tab索引`(INT) 输出端口 + `tab_index_in`(INT, forceInput) 输入端口，支持链式传播 / 环路防护 / 越界钳制（commit a7edf6a）
+- OpenkitSolAttnMiniMax：Sol-Attn（arXiv 2607.24027）训练免训练 block-sparse 注意力节点，专给 MiniMax-H3；含 exact-KV conditioning sink、Morton Z-order 视频重排、per-block tau/dense 门控、sigma 调度；可选 GPU 增强（需 comfy_kitchen sol_attn 内核，bf16/fp16 head_dim128 sm_80+），缺失时插件仍可加载
 
 ### Fixed
 - 执行时间统计：与 Dev-Utils-fix 计时器共存时自动互斥让位（消除顶部双计时器）；中断事件名修正为内核真实事件 `execution_interrupted`（原监听不存在的 `interrupt`）；缓存命中节点不再发送假 ~0ms 计时；被中断节点 badge 正确复位；刷新/切工作流后从 localStorage 恢复最近一次耗时并校验 class_type，防止跨工作流 node_id 碰撞张冠李戴；显存标注修正为增量 `ΔVRAM`

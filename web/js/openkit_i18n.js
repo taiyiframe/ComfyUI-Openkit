@@ -314,6 +314,7 @@ import { app } from "../../../scripts/app.js";
     "MultiSegmentPromptEditor": ["多段提示词可视化编辑", "Multi-Segment Prompt Editor"],
     "OpenkitMemoryCleanup": ["显存内存清理", "VRAM/RAM Cleanup"],
     "OpenkitExecutionTime": ["执行时间统计", "Execution Time"],
+    "OpenkitSolAttnMiniMax": ["Sol-Attn稀疏注意力(H3)", "Sol-Attn Sparse Attention (H3)"],
   };
 
   /** 按当前语言更新所有 Openkit 节点标题。仅当标题仍是默认名时才覆盖，
