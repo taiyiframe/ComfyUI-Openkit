@@ -100,10 +100,13 @@ def _get_process_mem():
                 ]
             pmc = _PMC()
             pmc.cb = ctypes.sizeof(_PMC)
-            ctypes.windll.psapi.GetProcessMemoryInfo(
-                ctypes.windll.kernel32.GetCurrentProcess(),
-                ctypes.byref(pmc), pmc.cb,
-            )
+            k32 = ctypes.windll.kernel32
+            psapi = ctypes.windll.psapi
+            # 64 位 Python 下必须显式声明 restype/argtypes，否则 GetCurrentProcess 返回的
+            # 伪句柄 HANDLE(-1) 被截断为 32 位，GetProcessMemoryInfo 失败(err 6)恒返回 0。
+            k32.GetCurrentProcess.restype = ctypes.c_void_p
+            psapi.GetProcessMemoryInfo.argtypes = [ctypes.c_void_p, ctypes.POINTER(_PMC), ctypes.c_ulong]
+            psapi.GetProcessMemoryInfo(k32.GetCurrentProcess(), ctypes.byref(pmc), pmc.cb)
             return int(pmc.WorkingSetSize)
         import resource
         return int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024)
@@ -112,23 +115,44 @@ def _get_process_mem():
 
 
 def _live_push_loop(stop_event, server_obj, prompt_id, unique_id,
-                    start_time, node_start_vram, node_start_mem):
-    """节点运行中每 ~500ms 推送一次 openkit.exec_live。所有异常吞掉。"""
+                    start_time, node_start_vram, node_start_mem, node_samples):
+    """节点运行中每 ~500ms 推送一次 openkit.exec_live。所有异常吞掉。
+
+    node_samples: 跨线程共享 dict，累积本节点执行期极值：
+      min_vram: active allocated 谷底（trough）
+      max_vram: peak allocated 峰值
+      max_mem:  进程 WorkingSet 峰值
+    VRAM 用 peak-trough 摆幅而非 peak-入口基线——ComfyUI 在节点内 offload 旧模型
+    再加载同尺寸新模型时，前者能测到模型体积，后者恒为 0。
+    """
     try:
         while not stop_event.wait(timeout=0.5):
             try:
-                # 节点独占增量（peak 是本节点 reset 后的峰值）
-                node_vram_delta = max(0, _get_peak_vram() - node_start_vram)
-                node_ram_delta = max(0, _get_process_mem() - node_start_mem)
+                cur_vram = _get_current_vram()
+                peak_vram = _get_peak_vram()
+                cur_mem = _get_process_mem()
+
+                # 累积本节点极值（GIL 下 dict 赋值原子；finally join 后主线程再读）
+                if cur_vram < node_samples["min_vram"]:
+                    node_samples["min_vram"] = cur_vram
+                if peak_vram > node_samples["max_vram"]:
+                    node_samples["max_vram"] = peak_vram
+                if cur_mem > node_samples["max_mem"]:
+                    node_samples["max_mem"] = cur_mem
+
+                # VRAM=执行期摆幅；RAM=进程工作集绝对值（参考。无 per-node 主机内存
+                # 计数器，差量对 GPU 节点恒 0 无意义）
+                node_vram_delta = max(0, node_samples["max_vram"] - node_samples["min_vram"])
+                node_ram_delta = cur_mem
 
                 task_vram_peak = _run_state.get("task_vram_peak", 0) if _run_state is not None else 0
                 task_vram_baseline = _run_state.get("task_vram_baseline", 0) if _run_state is not None else 0
                 task_mem_baseline = _run_state.get("task_mem_baseline", 0) if _run_state is not None else 0
 
                 # 任务级独占增量
-                task_cur_peak = max(task_vram_peak, _get_peak_vram())
+                task_cur_peak = max(task_vram_peak, peak_vram)
                 task_vram_delta = max(0, task_cur_peak - task_vram_baseline)
-                task_ram_delta = max(0, _get_process_mem() - task_mem_baseline)
+                task_ram_delta = max(0, cur_mem - task_mem_baseline)
 
                 elapsed_ms = int((time.perf_counter() - start_time) * 1000)
 
@@ -232,6 +256,14 @@ async def _execute_wrapper_core(origin_execute, *args, **kwargs):
     start_vram = _get_peak_vram()
     start_mem = _get_process_mem()
 
+    # 本节点执行期极值（跨 live 线程累积）。VRAM 用 peak-trough 摆幅，
+    # RAM 用执行期 WorkingSet 峰值——对节点内 offload/reload 与瞬时主机内存峰值稳健。
+    node_samples = {
+        "min_vram": _get_current_vram(),
+        "max_vram": start_vram,
+        "max_mem": start_mem,
+    }
+
     # 获取节点类型用于日志
     try:
         class_type = dynprompt.get_node(unique_id).get('class_type', '?')
@@ -246,7 +278,7 @@ async def _execute_wrapper_core(origin_execute, *args, **kwargs):
             _live_thread = threading.Thread(
                 target=_live_push_loop,
                 args=(_live_stop, server_obj, prompt_id, unique_id,
-                      start_time, start_vram, start_mem),
+                      start_time, start_vram, start_mem, node_samples),
                 daemon=True,
             )
             _live_thread.start()
@@ -308,16 +340,28 @@ async def _execute_wrapper_core(origin_execute, *args, **kwargs):
     # 计时统计逻辑本身包 try/except，失败时不影响结果
     try:
         elapsed_ms = int((time.perf_counter() - start_time) * 1000)
-        end_vram = _get_peak_vram()
-        vram_delta = max(0, end_vram - start_vram)
-        mem_delta = max(0, _get_process_mem() - start_mem)
+        # live 线程已在 finally join，这里把最后一刻的 active/peak/ws 并入极值
+        end_cur_vram = _get_current_vram()
+        end_peak_vram = _get_peak_vram()
+        end_mem = _get_process_mem()
+        if end_cur_vram < node_samples["min_vram"]:
+            node_samples["min_vram"] = end_cur_vram
+        if end_peak_vram > node_samples["max_vram"]:
+            node_samples["max_vram"] = end_peak_vram
+        if end_mem > node_samples["max_mem"]:
+            node_samples["max_mem"] = end_mem
+
+        # VRAM：执行期峰值 - 谷底（摆幅），节点内 offload/reload 不再归零
+        vram_delta = max(0, node_samples["max_vram"] - node_samples["min_vram"])
+        # RAM：进程工作集执行期峰值绝对值（参考值；无 per-node 主机内存计数器）
+        mem_delta = node_samples["max_mem"]
 
         # 把本节点 exit 时的峰值（绝对量）累加到任务级峰值
         if _run_state is not None:
             try:
                 _run_state["task_vram_peak"] = max(
                     _run_state.get("task_vram_peak", 0),
-                    end_vram,
+                    end_peak_vram,
                 )
             except Exception:
                 pass
