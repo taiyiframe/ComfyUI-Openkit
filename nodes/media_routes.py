@@ -50,8 +50,34 @@ def _safe(name):
     return name[:120]
 
 
+def _input_root():
+    """Return the ComfyUI input directory as an ABSOLUTE path.
+
+    Never fall back to a relative "input" (which would resolve against the
+    process cwd and could leak files outside the project tree). In ComfyUI we
+    use folder_paths; if that is unavailable we derive ComfyUI's root from the
+    folder_paths module location; for out-of-tree unit tests we pin to a
+    deterministic directory inside this plugin package.
+    """
+    if folder_paths is not None:
+        try:
+            d = folder_paths.get_input_directory()
+            if d:
+                return os.path.abspath(d)
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            root = os.path.dirname(os.path.realpath(folder_paths.__file__))
+            return os.path.abspath(os.path.join(root, "input"))
+        except Exception:  # noqa: BLE001
+            pass
+    # Outside ComfyUI (unit tests): keep writes inside this package, never cwd.
+    pkg_root = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+    return os.path.abspath(os.path.join(pkg_root, "_external_input"))
+
+
 def _target_dir():
-    base = folder_paths.get_input_directory() if folder_paths else "input"
+    base = _input_root()
     path = os.path.join(base, SUBFOLDER)
     os.makedirs(path, exist_ok=True)
     return path
@@ -74,7 +100,7 @@ def _preset_dir():
           media_loader/                 # presets for the Media Loader node
             <preset_name>.json          # one JSON file per preset
     """
-    base = folder_paths.get_input_directory() if folder_paths else "input"
+    base = _input_root()
     path = os.path.join(base, "openkit", "presets", "media_loader")
     os.makedirs(path, exist_ok=True)
     return path
