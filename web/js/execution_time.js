@@ -72,6 +72,18 @@ function fmtBytes(bytes, decimals) {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + " " + sizes[i];
 }
 
+// 根据 total 数量级选统一单位，返回 "used/total unit"（如 6.9/16.0 GB）；total 为空返回 "—"
+function fmtBytesPair(used, total) {
+  if (total === null || total === undefined || total === 0) return "—";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB", "TB"];
+  const i = Math.floor(Math.log(total) / Math.log(k));
+  const unit = sizes[i] || "TB";
+  const u = ((used || 0) / Math.pow(k, i)).toFixed(1);
+  const t = (total / Math.pow(k, i)).toFixed(1);
+  return u + "/" + t + " " + unit;
+}
+
 function fmtTotal(ms) {
   const totalSec = Math.floor(ms / 1000);
   const m = Math.floor(totalSec / 60);
@@ -94,6 +106,12 @@ let taskLiveVram = 0;   // 运行中：当前任务累计独占显存增量
 let taskLiveRam = 0;    // 运行中：当前任务累计独占内存增量
 let taskFinalVram = 0;  // 运行结束后冻结的任务独占显存
 let taskFinalRam = 0;   // 运行结束后冻结的任务独占内存
+
+// 表格列排序状态：null = 恢复 source.nodes 原始顺序；否则 {col, dir}，dir=1 升序 / -1 降序
+let tableSort = null;
+// 系统级实时显存/内存占用（轮询 /openkit_media/system_stats）；{vram:{used,total}|null, ram:{...}|null}
+let sysStats = { vram: null, ram: null };
+let sysStatsTimer = null;
 
 /* ---------------- 历史持久化（按工作流结构 hash 隔离，LRU 淘汰） ----------------
  * localStorage["openkit_et_history_v1"] 结构：
@@ -361,15 +379,15 @@ function isTimerMinimized() {
   return !!timerEl && timerEl.classList.contains("ok-et-minimized");
 }
 
-// 顶部第二行：显存（绿）→ · → 内存（蓝），只显示任务独占增量绝对值，无分母
+// 顶部第二行：显存（绿）→ · → 内存（蓝），显示系统级实时占用/总量（来自 system_stats 轮询）
 function updateMetricLine() {
   if (!metricEl) return;
-  const vram = (execStartTs !== null) ? taskLiveVram : (taskFinalVram || 0);
-  const ram = (execStartTs !== null) ? taskLiveRam : (taskFinalRam || 0);
+  const vramPair = sysStats.vram ? fmtBytesPair(sysStats.vram.used, sysStats.vram.total) : "—";
+  const ramPair = sysStats.ram ? fmtBytesPair(sysStats.ram.used, sysStats.ram.total) : "—";
   metricEl.innerHTML =
-    '<span style="color:#a0d88a">显存 ' + fmtBytes(vram, 1) + '</span>' +
+    '<span style="color:#a0d88a">显存 ' + vramPair + '</span>' +
     '<span style="margin:0 6px;color:#555">·</span>' +
-    '<span style="color:#82c8e0">内存 ' + fmtBytes(ram, 1) + '</span>';
+    '<span style="color:#82c8e0">内存 ' + ramPair + '</span>';
 }
 
 // 应用/恢复最小化样式
@@ -539,6 +557,24 @@ function freezeTimer() {
   updateMetricLine();
 }
 
+// 轮询系统级显存/内存占用；失败静默保留上次值，不刷屏
+async function pollSysStats() {
+  try {
+    const resp = await fetch("openkit_media/system_stats", { cache: "no-store" });
+    if (!resp.ok) return;
+    const data = await resp.json();
+    sysStats.vram = data.vram || null;
+    sysStats.ram = data.ram || null;
+    updateMetricLine();
+  } catch (e) { /* 静默保留上次值 */ }
+}
+
+function startSysStatsPolling() {
+  if (sysStatsTimer !== null) return;
+  pollSysStats(); // 首次立即取一次
+  sysStatsTimer = setInterval(pollSysStats, 1500);
+}
+
 /* ---------------- Badge 绘制 ---------------- */
 
 function drawBadge(node, orig, restArgs) {
@@ -597,6 +633,22 @@ function drawBadge(node, orig, restArgs) {
 
 /* ---------------- 表格 ---------------- */
 
+// 列排序取值：col 0=NodeID 1=Title 2=Time 3=Last 4=Diff 5=VRAM；无值返回 null（排末尾）
+function sortNodeKey(item, col, prevPool) {
+  const node = app.graph.getNodeById(item.node);
+  const title = node?.title ?? item.class_type ?? String(item.node);
+  const prev = prevPool.find((x) => x.node === item.node)?.execution_time;
+  switch (col) {
+    case 0: return item.node;
+    case 1: return title;
+    case 2: return item.execution_time;
+    case 3: return prev !== undefined ? prev : null;
+    case 4: return prev !== undefined ? (item.execution_time - prev) : null;
+    case 5: return item.vram_used;
+    default: return null;
+  }
+}
+
 function buildTable() {
   const tbody = document.createElement("tbody");
   const tfoot = document.createElement("tfoot");
@@ -611,10 +663,21 @@ function buildTable() {
   const thead = document.createElement("thead");
   thead.style.background = "var(--comfy-input-bg)";
   const trh = document.createElement("tr");
-  ["Node ID", "Title", "Time", "Last", "Diff", "VRAM"].forEach((hdr) => {
+  ["Node ID", "Title", "Time", "Last", "Diff", "VRAM"].forEach((hdr, idx) => {
     const th = document.createElement("th");
-    th.textContent = t(hdr);
+    let label = t(hdr);
+    if (tableSort && tableSort.col === idx) label += (tableSort.dir === 1 ? " ▲" : " ▼");
+    th.textContent = label;
     Object.assign(th.style, thStyle);
+    th.style.cursor = "pointer";
+    th.title = "点击排序";
+    th.onclick = () => {
+      // 三态循环：升序 -> 降序 -> 恢复默认；切到别的列默认升序
+      if (!tableSort || tableSort.col !== idx) tableSort = { col: idx, dir: 1 };
+      else if (tableSort.dir === 1) tableSort = { col: idx, dir: -1 };
+      else tableSort = null;
+      refreshTable();
+    };
     trh.appendChild(th);
   });
   thead.appendChild(trh);
@@ -631,9 +694,27 @@ function buildTable() {
 
   if (!source.nodes.length) return table;
 
+  // 按 tableSort 生成排序后的节点拷贝（不改原数组）；tfoot 汇总行始终固定底部不参与排序
+  let displayNodes = source.nodes;
+  if (tableSort) {
+    const col = tableSort.col;
+    const dir = tableSort.dir;
+    displayNodes = source.nodes.slice().sort((a, b) => {
+      const va = sortNodeKey(a, col, prevPool);
+      const vb = sortNodeKey(b, col, prevPool);
+      const na = (va === null || va === undefined);
+      const nb = (vb === null || vb === undefined);
+      if (na && nb) return 0;
+      if (na) return 1;   // 无值统一排末尾
+      if (nb) return -1;
+      if (typeof va === "string" && typeof vb === "string") return va.localeCompare(vb, "zh") * dir;
+      return (va - vb) * dir;
+    });
+  }
+
   let maxTime = 0, maxVram = 0;
 
-  source.nodes.forEach((item) => {
+  displayNodes.forEach((item) => {
     const node = app.graph.getNodeById(item.node);
     const title = node?.title ?? item.class_type ?? item.node;
     const prev = prevPool.find((x) => x.node === item.node)?.execution_time;
@@ -757,6 +838,7 @@ app.registerExtension({
 
   async setup() {
     ensureTimer();
+    startSysStatsPolling();
 
     // 工作流加载 / 切换工作流 tab 后恢复历史 badge 与表格
     // （graph.configure 会重建节点对象，易失的 _ok_et_* 属性全部丢失）
