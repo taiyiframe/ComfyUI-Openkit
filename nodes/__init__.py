@@ -9,6 +9,7 @@ from .execution_time import OpenkitExecutionTime
 from .memory_cleanup import OpenkitMemoryCleanup
 from .sol_attn_minimax import OpenkitSolAttnMiniMax
 from . import media_routes  # noqa: F401  (registers /openkit_media/* HTTP routes)
+from . import system_stats  # noqa: F401  (registers GET /openkit_media/system_stats)
 
 NODE_CLASS_MAPPINGS = {
     "JsonExtractor": JsonExtractor,
